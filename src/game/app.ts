@@ -10,6 +10,7 @@ import {
   Vector3,
   WebGLRenderer
 } from "three";
+import { deriveSoundState, GameAudioController } from "./audio";
 import { computeCameraRig } from "./camera";
 import { KeyboardInput } from "./input";
 import { loadOfficialWorkerModel } from "./officialWorkerModel";
@@ -29,6 +30,7 @@ declare global {
       limbRotations?: Record<string, number | undefined>;
       officialRig?: Record<string, unknown>;
       excavator?: Record<string, unknown>;
+      audio?: Record<string, unknown>;
     };
   }
 }
@@ -63,9 +65,12 @@ export function mountGameApp(root: HTMLElement): GameApp {
   });
   const camera = new PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 120);
   const input = new KeyboardInput(window);
+  const audio = new GameAudioController();
   let state = createInitialGameState();
+  let previousState = state;
   let animationFrame = 0;
   let disposed = false;
+  let audioUnlockRequested = false;
 
   const onResize = () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -73,18 +78,29 @@ export function mountGameApp(root: HTMLElement): GameApp {
     renderer.setSize(window.innerWidth, window.innerHeight);
   };
   window.addEventListener("resize", onResize);
+  const unlockAudio = () => {
+    if (audioUnlockRequested) {
+      return;
+    }
+    audioUnlockRequested = true;
+    void audio.unlock();
+  };
+  window.addEventListener("keydown", unlockAudio);
+  window.addEventListener("pointerdown", unlockAudio);
 
   const tick = () => {
     if (disposed) {
       return;
     }
 
+    previousState = state;
     state = updateGameState(state, input.snapshot(), FIXED_DT);
+    audio.update(deriveSoundState(previousState, state));
     syncWorld(world, state);
-    syncDebugState(world, state);
+    syncDebugState(world, state, audio);
     updateCamera(camera, state);
     syncCameraFillLight(world, camera, state);
-    updateHud(hud, state);
+    updateHud(hud, state, audio);
     renderer.render(world.scene, camera);
     animationFrame = window.requestAnimationFrame(tick);
   };
@@ -96,13 +112,16 @@ export function mountGameApp(root: HTMLElement): GameApp {
       disposed = true;
       window.cancelAnimationFrame(animationFrame);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", unlockAudio);
+      window.removeEventListener("pointerdown", unlockAudio);
+      audio.dispose();
       renderer.dispose();
       root.innerHTML = "";
     }
   };
 }
 
-function syncDebugState(world: FarmWorld, state: GameState): void {
+function syncDebugState(world: FarmWorld, state: GameState, audio: GameAudioController): void {
   window.__legoGameDebug = {
     officialModelLoaded: world.playerRoot.userData.loadedOfficialWorkerModel === true,
     officialModelBounds: world.playerRoot.userData.officialModelBounds,
@@ -114,7 +133,8 @@ function syncDebugState(world: FarmWorld, state: GameState): void {
       leftLeg: world.playerRoot.getObjectByName("playerLeftLeg")?.rotation.x,
       rightLeg: world.playerRoot.getObjectByName("playerRightLeg")?.rotation.x
     },
-    officialRig: getOfficialRigDebug(world)
+    officialRig: getOfficialRigDebug(world),
+    audio: audio.getDebugState()
   };
 }
 
@@ -352,13 +372,15 @@ function syncCameraFillLight(world: FarmWorld, camera: PerspectiveCamera, state:
   light.target.updateMatrixWorld();
 }
 
-function updateHud(hud: HTMLElement, state: GameState): void {
+function updateHud(hud: HTMLElement, state: GameState, audio: GameAudioController): void {
   const modeLabel = state.mode === "driving" ? "驾驶挖掘机" : "步行";
   const cameraLabel = state.mode === "driving" ? "驾驶室视角" : "第三人称过肩";
+  const audioLabel = audio.getDebugState().enabled === true ? "已启用" : "按任意控制键启用";
   hud.innerHTML = `
     <div class="hud-title">LEGO EXCAVATOR FARM</div>
     <div data-testid="mode">状态：${modeLabel}</div>
     <div data-testid="camera-mode">镜头：${cameraLabel}</div>
     <div>WASD 行走/开车 | 空格 跳跃 | E 上车/下车 | J/L 上车回转 | U/O 大臂 | N/M 小臂 | Y/H 铲斗</div>
+    <div data-testid="audio-mode">声音：${audioLabel}</div>
   `;
 }

@@ -9,6 +9,7 @@ test.describe("lego excavator game", () => {
     await expect(page.getByTestId("hud")).toContainText("LEGO EXCAVATOR FARM");
     await expect(page.getByTestId("mode")).toContainText("步行");
     await expect(page.getByTestId("camera-mode")).toContainText("第三人称过肩");
+    await expect(page.getByTestId("audio-mode")).toContainText("声音：按任意控制键启用");
 
     const nonBackgroundPixels = await page.evaluate(() => {
       const gameCanvas = document.querySelector<HTMLCanvasElement>('[data-testid="game-canvas"]');
@@ -63,9 +64,16 @@ test.describe("lego excavator game", () => {
 
     await page.keyboard.down("KeyW");
     await page.waitForTimeout(250);
+    const engineAudioDebug = await page.evaluate(() => window.__legoGameDebug?.audio);
+    expect(engineAudioDebug).toMatchObject({
+      enabled: true
+    });
+    expect(engineAudioDebug?.activeLoops).toContain("engine");
     await page.keyboard.up("KeyW");
     await page.keyboard.down("KeyU");
     await page.waitForTimeout(250);
+    const boomAudioDebug = await page.evaluate(() => window.__legoGameDebug?.audio);
+    expect(boomAudioDebug?.activeLoops).toContain("hydraulicBoom");
     await page.keyboard.up("KeyU");
     await page.keyboard.down("KeyD");
     await page.waitForTimeout(180);
@@ -97,6 +105,7 @@ test.describe("lego excavator game", () => {
     await expect(page.getByTestId("hud")).toContainText("WASD 行走/开车");
     await expect(page.getByTestId("hud")).toContainText("U/O 大臂");
     await expect(page.getByTestId("hud")).toContainText("N/M 小臂");
+    await expect(page.getByTestId("audio-mode")).toContainText("声音：已启用");
     await page.keyboard.press("KeyE");
 
     await expect(page.getByTestId("mode")).toContainText("步行");
