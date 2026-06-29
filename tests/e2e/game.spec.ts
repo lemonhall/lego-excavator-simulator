@@ -67,6 +67,31 @@ test.describe("lego excavator game", () => {
     await page.keyboard.down("KeyR");
     await page.waitForTimeout(250);
     await page.keyboard.up("KeyR");
+    await page.keyboard.down("KeyD");
+    await page.waitForTimeout(180);
+    await page.keyboard.up("KeyD");
+    await page.keyboard.down("KeyL");
+    await page.waitForTimeout(180);
+    await page.keyboard.up("KeyL");
+    await page.keyboard.down("KeyT");
+    await page.waitForTimeout(180);
+    await page.keyboard.up("KeyT");
+    await page.keyboard.down("KeyY");
+    await page.waitForTimeout(180);
+    await page.keyboard.up("KeyY");
+
+    const excavatorDebug = await page.evaluate(() => window.__legoGameDebug?.excavator);
+    expect(excavatorDebug).toMatchObject({
+      hasCrawlerBase: true,
+      hasUpper: true,
+      hasStick: true,
+      hasBucket: true
+    });
+    expect(Number(excavatorDebug?.crawlerHeading)).not.toBe(0);
+    expect(Number(excavatorDebug?.upperRotation)).not.toBe(0);
+    expect(Number(excavatorDebug?.stickAngle)).not.toBe(0);
+    expect(Number(excavatorDebug?.bucketAngle)).not.toBe(0);
+    await expect(page.getByTestId("hud")).toContainText("J/L slew");
     await page.keyboard.press("KeyE");
 
     await expect(page.getByTestId("mode")).toContainText("ON FOOT");

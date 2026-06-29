@@ -15,6 +15,12 @@ export interface GameInput {
   interact: boolean;
   boomUp: boolean;
   boomDown: boolean;
+  upperLeft: boolean;
+  upperRight: boolean;
+  stickIn: boolean;
+  stickOut: boolean;
+  bucketCurl: boolean;
+  bucketDump: boolean;
 }
 
 export interface PlayerState {
@@ -29,8 +35,12 @@ export interface PlayerState {
 
 export interface ExcavatorState {
   position: Vec3;
+  crawlerHeading: number;
+  upperRotation: number;
   heading: number;
   boomAngle: number;
+  stickAngle: number;
+  bucketAngle: number;
 }
 
 export interface GameState {
@@ -57,11 +67,25 @@ export const BOOM_LIMITS = {
   max: 0.9
 } as const;
 
+export const STICK_LIMITS = {
+  min: -1.05,
+  max: 0.75
+} as const;
+
+export const BUCKET_LIMITS = {
+  min: -1.15,
+  max: 0.95
+} as const;
+
 const PLAYER_SPEED = 5.5;
-const VEHICLE_SPEED = 4;
+const TRACK_SPEED = 3.4;
+const TRACK_TURN_SPEED = 1.9;
 const JUMP_SPEED = 7.5;
 const GRAVITY = -18;
 const BOOM_SPEED = 1.8;
+const STICK_SPEED = 1.65;
+const BUCKET_SPEED = 2.25;
+const UPPER_SLEW_SPEED = 1.45;
 const INTERACTION_DISTANCE = 2.2;
 
 export function createInitialGameState(options: InitialGameStateOptions = {}): GameState {
@@ -82,8 +106,12 @@ export function createInitialGameState(options: InitialGameStateOptions = {}): G
     },
     excavator: {
       position: excavatorPosition,
+      crawlerHeading: 0,
+      upperRotation: 0,
       heading: 0,
-      boomAngle: 0.15
+      boomAngle: 0.15,
+      stickAngle: -0.35,
+      bucketAngle: -0.2
     }
   };
 }
@@ -153,14 +181,21 @@ function updatePlayer(state: GameState, input: GameInput, dt: number): void {
 }
 
 function updateExcavator(state: GameState, input: GameInput, dt: number): void {
-  const direction = movementDirection(input);
-  state.excavator.position.x += direction.x * VEHICLE_SPEED * dt;
-  state.excavator.position.z += direction.z * VEHICLE_SPEED * dt;
+  const drive = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
+  const turn = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+
+  state.excavator.crawlerHeading = normalizeAngle(state.excavator.crawlerHeading + turn * TRACK_TURN_SPEED * dt);
+
+  const forward = {
+    x: Math.sin(state.excavator.crawlerHeading),
+    z: -Math.cos(state.excavator.crawlerHeading)
+  };
+  state.excavator.position.x += forward.x * drive * TRACK_SPEED * dt;
+  state.excavator.position.z += forward.z * drive * TRACK_SPEED * dt;
   state.excavator.position = clampToWorld(state.excavator.position);
 
-  if (direction.x !== 0 || direction.z !== 0) {
-    state.excavator.heading = Math.atan2(direction.x, direction.z);
-  }
+  const upperDelta = (input.upperRight ? 1 : 0) - (input.upperLeft ? 1 : 0);
+  state.excavator.upperRotation = normalizeAngle(state.excavator.upperRotation + upperDelta * UPPER_SLEW_SPEED * dt);
 
   const boomDelta = (input.boomUp ? 1 : 0) - (input.boomDown ? 1 : 0);
   state.excavator.boomAngle = clamp(
@@ -168,6 +203,22 @@ function updateExcavator(state: GameState, input: GameInput, dt: number): void {
     BOOM_LIMITS.min,
     BOOM_LIMITS.max
   );
+
+  const stickDelta = (input.stickIn ? 1 : 0) - (input.stickOut ? 1 : 0);
+  state.excavator.stickAngle = clamp(
+    state.excavator.stickAngle + stickDelta * STICK_SPEED * dt,
+    STICK_LIMITS.min,
+    STICK_LIMITS.max
+  );
+
+  const bucketDelta = (input.bucketCurl ? 1 : 0) - (input.bucketDump ? 1 : 0);
+  state.excavator.bucketAngle = clamp(
+    state.excavator.bucketAngle + bucketDelta * BUCKET_SPEED * dt,
+    BUCKET_LIMITS.min,
+    BUCKET_LIMITS.max
+  );
+
+  state.excavator.heading = normalizeAngle(state.excavator.crawlerHeading + state.excavator.upperRotation);
 }
 
 function movementDirection(input: GameInput): { x: number; z: number } {
@@ -201,6 +252,17 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function normalizeAngle(value: number): number {
+  let angle = value;
+  while (angle > Math.PI) {
+    angle -= Math.PI * 2;
+  }
+  while (angle < -Math.PI) {
+    angle += Math.PI * 2;
+  }
+  return angle;
+}
+
 function cloneState(state: GameState): GameState {
   return {
     mode: state.mode,
@@ -215,8 +277,12 @@ function cloneState(state: GameState): GameState {
     },
     excavator: {
       position: cloneVec3(state.excavator.position),
+      crawlerHeading: state.excavator.crawlerHeading,
+      upperRotation: state.excavator.upperRotation,
       heading: state.excavator.heading,
-      boomAngle: state.excavator.boomAngle
+      boomAngle: state.excavator.boomAngle,
+      stickAngle: state.excavator.stickAngle,
+      bucketAngle: state.excavator.bucketAngle
     }
   };
 }

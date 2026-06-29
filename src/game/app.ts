@@ -28,6 +28,7 @@ declare global {
       fallbackVisible?: boolean;
       limbRotations?: Record<string, number | undefined>;
       officialRig?: Record<string, unknown>;
+      excavator?: Record<string, unknown>;
     };
   }
 }
@@ -80,7 +81,7 @@ export function mountGameApp(root: HTMLElement): GameApp {
 
     state = updateGameState(state, input.snapshot(), FIXED_DT);
     syncWorld(world, state);
-    syncDebugState(world);
+    syncDebugState(world, state);
     updateCamera(camera, state);
     syncCameraFillLight(world, camera, state);
     updateHud(hud, state);
@@ -101,11 +102,12 @@ export function mountGameApp(root: HTMLElement): GameApp {
   };
 }
 
-function syncDebugState(world: FarmWorld): void {
+function syncDebugState(world: FarmWorld, state: GameState): void {
   window.__legoGameDebug = {
     officialModelLoaded: world.playerRoot.userData.loadedOfficialWorkerModel === true,
     officialModelBounds: world.playerRoot.userData.officialModelBounds,
     fallbackVisible: world.playerRoot.getObjectByName("playerProceduralFallback")?.visible,
+    excavator: getExcavatorDebug(world, state),
     limbRotations: {
       leftArm: world.playerRoot.getObjectByName("playerLeftArm")?.rotation.x,
       rightArm: world.playerRoot.getObjectByName("playerRightArm")?.rotation.x,
@@ -113,6 +115,22 @@ function syncDebugState(world: FarmWorld): void {
       rightLeg: world.playerRoot.getObjectByName("playerRightLeg")?.rotation.x
     },
     officialRig: getOfficialRigDebug(world)
+  };
+}
+
+function getExcavatorDebug(world: FarmWorld, state: GameState): Record<string, unknown> {
+  return {
+    hasCrawlerBase: world.excavatorCrawlerBase.name === "excavatorCrawlerBase",
+    hasUpper: world.excavatorUpper.name === "excavatorUpper",
+    hasStick: world.excavatorStick.name === "excavatorStick",
+    hasBucket: world.excavatorBucket.name === "excavatorBucket",
+    crawlerHeading: state.excavator.crawlerHeading,
+    upperRotation: state.excavator.upperRotation,
+    boomAngle: state.excavator.boomAngle,
+    stickAngle: state.excavator.stickAngle,
+    bucketAngle: state.excavator.bucketAngle,
+    crawlerWorldRotation: world.excavatorCrawlerBase.rotation.y,
+    upperWorldRotation: world.excavatorUpper.rotation.y
   };
 }
 
@@ -244,8 +262,12 @@ function syncWorld(world: FarmWorld, state: GameState): void {
   syncPlayerWalk(world, state);
 
   world.excavatorRoot.position.set(state.excavator.position.x, state.excavator.position.y, state.excavator.position.z);
-  world.excavatorRoot.rotation.y = state.excavator.heading;
-  world.excavatorBoom.rotation.z = state.excavator.boomAngle;
+  world.excavatorRoot.rotation.y = 0;
+  world.excavatorCrawlerBase.rotation.y = state.excavator.crawlerHeading;
+  world.excavatorUpper.rotation.y = state.excavator.crawlerHeading + state.excavator.upperRotation;
+  world.excavatorBoom.rotation.x = state.excavator.boomAngle;
+  world.excavatorStick.rotation.x = state.excavator.stickAngle;
+  world.excavatorBucket.rotation.x = state.excavator.bucketAngle;
 }
 
 function syncPlayerWalk(world: FarmWorld, state: GameState): void {
@@ -300,6 +322,6 @@ function updateHud(hud: HTMLElement, state: GameState): void {
     <div class="hud-title">LEGO EXCAVATOR FARM</div>
     <div data-testid="mode">Mode: ${modeLabel}</div>
     <div data-testid="camera-mode">Camera: ${cameraLabel}</div>
-    <div>WASD move / drive | Space jump | E enter/exit | Q/R boom</div>
+    <div>WASD move / tracks | Space jump | E enter/exit | Q/R boom | J/L slew | T/G stick | Y/H bucket</div>
   `;
 }

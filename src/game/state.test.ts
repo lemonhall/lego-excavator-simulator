@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   BOOM_LIMITS,
+  BUCKET_LIMITS,
   createInitialGameState,
+  STICK_LIMITS,
   updateGameState,
   WORLD_BOUNDS,
   type GameInput
@@ -15,7 +17,13 @@ const idleInput = (): GameInput => ({
   jump: false,
   interact: false,
   boomUp: false,
-  boomDown: false
+  boomDown: false,
+  upperLeft: false,
+  upperRight: false,
+  stickIn: false,
+  stickOut: false,
+  bucketCurl: false,
+  bucketDump: false
 });
 
 describe("game state", () => {
@@ -97,7 +105,7 @@ describe("game state", () => {
     expect(exited.player.position.x).toBeGreaterThan(exited.excavator.position.x);
   });
 
-  it("REQ-0001-003 drives the excavator instead of the player while mounted", () => {
+  it("REQ-0003-002 drives the crawler base forward along its heading while mounted", () => {
     const state = createInitialGameState({
       mode: "driving",
       playerPosition: { x: 3, y: 0, z: 3 },
@@ -108,19 +116,43 @@ describe("game state", () => {
 
     expect(next.excavator.position.z).toBeLessThan(state.excavator.position.z);
     expect(next.player.position).toEqual(state.player.position);
+    expect(next.excavator.crawlerHeading).toBe(state.excavator.crawlerHeading);
   });
 
-  it("REQ-0001-003 clamps boom angle inside configured limits", () => {
+  it("REQ-0003-002 pivots the crawler base in place with differential track steering", () => {
+    const state = createInitialGameState({ mode: "driving" });
+
+    const next = updateGameState(state, { ...idleInput(), left: true }, 1);
+
+    expect(next.excavator.crawlerHeading).toBeLessThan(state.excavator.crawlerHeading);
+    expect(Math.hypot(next.excavator.position.x - state.excavator.position.x, next.excavator.position.z - state.excavator.position.z)).toBeLessThan(0.25);
+  });
+
+  it("REQ-0003-002 rotates the upper structure independently from the crawler base", () => {
+    const state = createInitialGameState({ mode: "driving" });
+
+    const next = updateGameState(state, { ...idleInput(), upperRight: true }, 1);
+
+    expect(next.excavator.upperRotation).toBeGreaterThan(state.excavator.upperRotation);
+    expect(next.excavator.crawlerHeading).toBe(state.excavator.crawlerHeading);
+    expect(next.excavator.heading).toBe(next.excavator.crawlerHeading + next.excavator.upperRotation);
+  });
+
+  it("REQ-0003-003 clamps boom, stick, and bucket angles inside configured limits", () => {
     let state = createInitialGameState({ mode: "driving" });
 
     for (let i = 0; i < 200; i += 1) {
-      state = updateGameState(state, { ...idleInput(), boomUp: true }, 0.016);
+      state = updateGameState(state, { ...idleInput(), boomUp: true, stickIn: true, bucketCurl: true }, 0.016);
     }
     expect(state.excavator.boomAngle).toBe(BOOM_LIMITS.max);
+    expect(state.excavator.stickAngle).toBe(STICK_LIMITS.max);
+    expect(state.excavator.bucketAngle).toBe(BUCKET_LIMITS.max);
 
     for (let i = 0; i < 400; i += 1) {
-      state = updateGameState(state, { ...idleInput(), boomDown: true }, 0.016);
+      state = updateGameState(state, { ...idleInput(), boomDown: true, stickOut: true, bucketDump: true }, 0.016);
     }
     expect(state.excavator.boomAngle).toBe(BOOM_LIMITS.min);
+    expect(state.excavator.stickAngle).toBe(STICK_LIMITS.min);
+    expect(state.excavator.bucketAngle).toBe(BUCKET_LIMITS.min);
   });
 });

@@ -33,7 +33,11 @@ export interface FarmWorld {
   scene: Scene;
   playerRoot: Group;
   excavatorRoot: Group;
+  excavatorCrawlerBase: Group;
+  excavatorUpper: Group;
   excavatorBoom: Group;
+  excavatorStick: Group;
+  excavatorBucket: Group;
 }
 
 const plastic = {
@@ -119,7 +123,14 @@ export function createFarmWorld(): FarmWorld {
   addPlayerPlasticFillLight(playerRoot);
   scene.add(playerRoot);
 
-  const { root: excavatorRoot, boom: excavatorBoom } = createExcavator();
+  const {
+    root: excavatorRoot,
+    crawlerBase: excavatorCrawlerBase,
+    upper: excavatorUpper,
+    boom: excavatorBoom,
+    stick: excavatorStick,
+    bucket: excavatorBucket
+  } = createExcavator();
   excavatorRoot.name = "excavator";
   excavatorRoot.position.set(3, 0, -3);
   scene.add(excavatorRoot);
@@ -134,7 +145,11 @@ export function createFarmWorld(): FarmWorld {
     scene,
     playerRoot,
     excavatorRoot,
-    excavatorBoom
+    excavatorCrawlerBase,
+    excavatorUpper,
+    excavatorBoom,
+    excavatorStick,
+    excavatorBucket
   };
 }
 
@@ -526,69 +541,197 @@ function createLeg(name: string): Group {
   return pivot;
 }
 
-function createExcavator(): { root: Group; boom: Group } {
+function createExcavator(): { root: Group; crawlerBase: Group; upper: Group; boom: Group; stick: Group; bucket: Group } {
   const root = new Group();
   markPart(root, "excavatorAssembly");
 
-  const lowerDeck = createPlatePart({ name: "excavatorLowerDeck", color: "#ffd21f", studsX: 6, studsZ: 3 });
-  lowerDeck.position.y = 0.26;
-  root.add(lowerDeck);
+  const crawlerBase = new Group();
+  crawlerBase.name = "excavatorCrawlerBase";
+  crawlerBase.userData.vehicleRole = "crawlerBase";
+  markPart(crawlerBase, "crawlerBaseAssembly");
+  root.add(crawlerBase);
 
-  const upperDeck = createPlatePart({ name: "excavatorUpperDeck", color: "#ffd21f", studsX: 5, studsZ: 2 });
-  upperDeck.position.set(-0.18, 0.5, -0.05);
-  root.add(upperDeck);
+  const leftTrack = createTrackAssembly("excavatorLeftTrack");
+  leftTrack.position.set(-1.02, 0.1, 0);
+  crawlerBase.add(leftTrack);
 
-  const cab = createBrickPart({ name: "excavatorCab", color: "#ffd21f", studsX: 2, studsZ: 2, height: 0.95 });
-  cab.position.set(-0.62, 0.72, -0.12);
-  root.add(cab);
+  const rightTrack = createTrackAssembly("excavatorRightTrack");
+  rightTrack.position.set(1.02, 0.1, 0);
+  crawlerBase.add(rightTrack);
 
-  const window = createRoundedPanel("excavatorWindow", 0.64, 0.52, 0.05, plastic.glass);
-  window.position.set(-0.62, 1.34, -0.56);
-  root.add(window);
+  const chassis = createPlatePart({ name: "excavatorCrawlerBridge", color: "#171717", studsX: 5, studsZ: 3 });
+  chassis.scale.set(0.92, 0.78, 0.88);
+  chassis.position.set(0, 0.32, 0);
+  crawlerBase.add(chassis);
 
-  const rearCounterweight = createBrickPart({ name: "excavatorCounterweight", color: "#ffd21f", studsX: 2, studsZ: 2, height: 0.5 });
-  rearCounterweight.position.set(-1.12, 0.72, 0.38);
-  root.add(rearCounterweight);
+  const turntable = new Group();
+  turntable.name = "excavatorTurntable";
+  turntable.userData.vehicleRole = "turntable";
+  markPart(turntable, "turntableAssembly");
+  turntable.position.y = 0.58;
+  root.add(turntable);
+
+  const turntableLower = createPlatePart({ name: "excavatorTurntableLower", color: "#171717", studsX: 4, studsZ: 4 });
+  turntableLower.scale.set(0.76, 0.72, 0.76);
+  turntable.add(turntableLower);
+
+  const upper = new Group();
+  upper.name = "excavatorUpper";
+  upper.userData.vehicleRole = "rotatingUpper";
+  markPart(upper, "upperAssembly");
+  upper.position.y = 0.72;
+  root.add(upper);
+
+  const upperDeck = createPlatePart({ name: "excavatorUpperDeck", color: "#ffd21f", studsX: 7, studsZ: 4 });
+  upperDeck.scale.set(1.05, 0.84, 0.98);
+  upperDeck.position.set(0.08, 0, 0.06);
+  upper.add(upperDeck);
+
+  const cab = createBrickPart({ name: "excavatorCab", color: "#ffd21f", studsX: 2, studsZ: 3, height: 0.98 });
+  cab.position.set(-0.74, 0.18, -0.32);
+  cab.userData.vehicleRole = "cab";
+  upper.add(cab);
+
+  const frontWindow = createRoundedPanel("excavatorFrontWindow", 0.52, 0.56, 0.035, plastic.glass);
+  frontWindow.position.set(-0.74, 1.0, -1.02);
+  upper.add(frontWindow);
+
+  const sideWindow = createRoundedPanel("excavatorSideWindow", 0.035, 0.48, 0.5, plastic.glass);
+  sideWindow.position.set(-1.18, 1.02, -0.33);
+  upper.add(sideWindow);
+
+  const roof = createPlatePart({ name: "excavatorCabRoof", color: "#ffd21f", studsX: 2, studsZ: 3 });
+  roof.position.set(-0.74, 1.18, -0.32);
+  roof.scale.set(1.08, 0.72, 1.08);
+  upper.add(roof);
+
+  const counterweight = createBrickPart({ name: "excavatorCounterweight", color: "#ffd21f", studsX: 3, studsZ: 2, height: 0.68 });
+  counterweight.position.set(0.58, 0.18, 0.82);
+  counterweight.scale.set(1.18, 1, 1.08);
+  counterweight.userData.vehicleRole = "counterweight";
+  upper.add(counterweight);
+
+  const engineCover = createPlatePart({ name: "excavatorEngineCover", color: "#ffd21f", studsX: 4, studsZ: 2 });
+  engineCover.position.set(0.48, 0.88, 0.62);
+  upper.add(engineCover);
+
+  const boomMount = createBrickPart({ name: "excavatorBoomPivotBlock", color: "#ffd21f", studsX: 2, studsZ: 1, height: 0.56 });
+  boomMount.position.set(0.08, 0.45, -1.02);
+  upper.add(boomMount);
 
   const boom = new Group();
   boom.name = "excavatorBoom";
+  boom.userData.vehicleRole = "boom";
   markPart(boom, "boomAssembly");
-  boom.position.set(0.75, 1.16, -0.22);
+  boom.position.set(0.08, 0.96, -1.05);
+  upper.add(boom);
 
-  const boomBase = createPlatePart({ name: "excavatorBoomBase", color: "#ffd21f", studsX: 4, studsZ: 1 });
-  boomBase.scale.set(1.2, 0.8, 0.66);
-  boomBase.position.set(0.58, 0, 0);
-  boom.add(boomBase);
+  const boomBeam = createArmBeam("excavatorBoomBeam", 6);
+  boomBeam.position.set(0, 0.1, -1.02);
+  boom.add(boomBeam);
 
-  const boomUpper = createPlatePart({ name: "excavatorBoomUpper", color: "#ffd21f", studsX: 4, studsZ: 1 });
-  boomUpper.scale.set(1.15, 0.8, 0.5);
-  boomUpper.position.set(0.98, 0.18, 0);
-  boomUpper.rotation.z = -0.08;
-  boom.add(boomUpper);
+  const boomCylinder = createRoundedPanel("excavatorBoomHydraulicCylinder", 0.16, 0.16, 1.35, plastic.black);
+  boomCylinder.position.set(0.42, -0.18, -0.68);
+  boomCylinder.rotation.x = 0.38;
+  boom.add(boomCylinder);
 
-  const bucket = createBrickPart({ name: "excavatorBucket", color: "#171717", studsX: 1, studsZ: 2, height: 0.26 });
-  bucket.position.set(2.05, -0.2, 0);
-  bucket.scale.set(0.82, 0.9, 1.08);
-  boom.add(bucket);
-  root.add(boom);
+  const stick = new Group();
+  stick.name = "excavatorStick";
+  stick.userData.vehicleRole = "stick";
+  markPart(stick, "stickAssembly");
+  stick.position.set(0, 0.2, -2.18);
+  boom.add(stick);
 
-  for (const x of [-0.82, 0.82]) {
-    const wheel = createWheelPart(`excavatorWheel${x}`);
-    wheel.position.set(x, 0.28, 0.78);
-    root.add(wheel);
+  const stickBeam = createArmBeam("excavatorStickBeam", 5);
+  stickBeam.scale.set(0.86, 0.86, 0.86);
+  stickBeam.position.set(0, -0.1, -0.82);
+  stick.add(stickBeam);
+
+  const stickCylinder = createRoundedPanel("excavatorStickHydraulicCylinder", 0.13, 0.13, 1.1, plastic.black);
+  stickCylinder.position.set(-0.36, 0.0, -0.52);
+  stickCylinder.rotation.x = -0.18;
+  stick.add(stickCylinder);
+
+  const bucket = new Group();
+  bucket.name = "excavatorBucket";
+  bucket.userData.vehicleRole = "bucket";
+  markPart(bucket, "bucketAssembly");
+  bucket.position.set(0, -0.22, -1.62);
+  stick.add(bucket);
+
+  const bucketBack = createBrickPart({ name: "excavatorBucketBack", color: "#171717", studsX: 2, studsZ: 1, height: 0.34 });
+  bucketBack.position.set(0, 0, 0);
+  bucketBack.rotation.x = -0.34;
+  bucket.add(bucketBack);
+
+  const bucketLip = createPlatePart({ name: "excavatorBucketLip", color: "#171717", studsX: 3, studsZ: 1 });
+  bucketLip.position.set(0, -0.24, -0.34);
+  bucketLip.scale.set(0.86, 0.72, 0.58);
+  bucket.add(bucketLip);
+
+  const teeth = new Group();
+  teeth.name = "excavatorBucketTeeth";
+  markPart(teeth, "bucketTeethAssembly");
+  teeth.position.set(0, -0.26, -0.58);
+  bucket.add(teeth);
+  for (let i = 0; i < 4; i += 1) {
+    const tooth = createRoundedPanel(`excavatorBucketTooth${i}`, 0.12, 0.08, 0.28, plastic.black);
+    tooth.position.set(-0.3 + i * 0.2, 0, 0);
+    tooth.rotation.x = -0.5;
+    teeth.add(tooth);
   }
 
-  const treadLeft = createPlatePart({ name: "excavatorLeftTreadPlate", color: "#171717", studsX: 5, studsZ: 1 });
-  treadLeft.position.set(0, 0.07, 0.82);
-  treadLeft.scale.set(1.04, 0.7, 0.66);
-  root.add(treadLeft);
+  return { root, crawlerBase, upper, boom, stick, bucket };
+}
 
-  const treadRight = createPlatePart({ name: "excavatorRightTreadPlate", color: "#171717", studsX: 5, studsZ: 1 });
-  treadRight.position.set(0, 0.07, -0.82);
-  treadRight.scale.set(1.04, 0.7, 0.66);
-  root.add(treadRight);
+function createTrackAssembly(name: string): Group {
+  const track = new Group();
+  track.name = name;
+  track.userData.vehicleRole = "track";
+  markPart(track, "trackAssembly");
 
-  return { root, boom };
+  const belt = createRoundedPanel(`${name}RubberBelt`, 0.58, 0.42, 3.05, plastic.black);
+  belt.position.y = 0.18;
+  track.add(belt);
+
+  for (let i = 0; i < 6; i += 1) {
+    const pad = createPlatePart({ name: `${name}Pad${i}`, color: "#171717", studsX: 1, studsZ: 1 });
+    pad.position.set(0, 0.42, -1.28 + i * 0.51);
+    pad.scale.set(1.3, 0.58, 0.68);
+    track.add(pad);
+  }
+
+  for (let i = 0; i < 3; i += 1) {
+    const wheel = createWheelPart(`${name}Roller${i}`, 0.19, 0.16);
+    wheel.position.set(0, 0.18, -0.95 + i * 0.95);
+    wheel.rotation.y = Math.PI / 2;
+    track.add(wheel);
+  }
+
+  return track;
+}
+
+function createArmBeam(name: string, studsZ: number): Group {
+  const beam = new Group();
+  beam.name = name;
+  markPart(beam, "armBeamAssembly");
+
+  const left = createPlatePart({ name: `${name}LeftRail`, color: "#ffd21f", studsX: 1, studsZ });
+  left.position.set(-0.18, 0, 0);
+  left.scale.set(0.72, 0.68, 0.82);
+  beam.add(left);
+
+  const right = createPlatePart({ name: `${name}RightRail`, color: "#ffd21f", studsX: 1, studsZ });
+  right.position.set(0.18, 0, 0);
+  right.scale.set(0.72, 0.68, 0.82);
+  beam.add(right);
+
+  const cross = createPlatePart({ name: `${name}CrossBrace`, color: "#ffd21f", studsX: 2, studsZ: 1 });
+  cross.position.set(0, 0.08, -studsZ * 0.17);
+  cross.scale.set(0.82, 0.62, 0.68);
+  beam.add(cross);
+
+  return beam;
 }
 
 function createBarn(): Group {

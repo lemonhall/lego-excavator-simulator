@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Box3, Vector3 } from "three";
 import { countLegoStuds } from "./legoParts";
 import { createFarmWorld } from "./world";
 
@@ -25,7 +26,11 @@ describe("farm world", () => {
 
     expect(world.playerRoot.name).toBe("player");
     expect(world.excavatorRoot.name).toBe("excavator");
+    expect(world.excavatorCrawlerBase.name).toBe("excavatorCrawlerBase");
+    expect(world.excavatorUpper.name).toBe("excavatorUpper");
     expect(world.excavatorBoom.name).toBe("excavatorBoom");
+    expect(world.excavatorStick.name).toBe("excavatorStick");
+    expect(world.excavatorBucket.name).toBe("excavatorBucket");
   });
 
   it("REQ-0002-004 builds a minifigure-like player with animatable limbs", () => {
@@ -172,7 +177,7 @@ describe("farm world", () => {
     expect(world.playerRoot.getObjectByName("playerPlasticFillLight")).toBeDefined();
   });
 
-  it("REQ-0002-003 rebuilds excavator from procedural LEGO parts", () => {
+  it("REQ-0003-004 rebuilds excavator from recognizable procedural LEGO assemblies", () => {
     const world = createFarmWorld();
     const excavatorParts: string[] = [];
 
@@ -182,9 +187,36 @@ describe("farm world", () => {
       }
     });
 
-    expect(excavatorParts.length).toBeGreaterThanOrEqual(32);
+    expect(excavatorParts.length).toBeGreaterThanOrEqual(70);
+    expect(world.excavatorRoot.getObjectByName("excavatorLeftTrack")).toBeDefined();
+    expect(world.excavatorRoot.getObjectByName("excavatorRightTrack")).toBeDefined();
+    expect(world.excavatorRoot.getObjectByName("excavatorTurntable")).toBeDefined();
+    expect(world.excavatorRoot.getObjectByName("excavatorCounterweight")).toBeDefined();
+    expect(world.excavatorRoot.getObjectByName("excavatorBucketTeeth")).toBeDefined();
     expect(world.excavatorRoot.getObjectByName("excavatorBucket")).toBeDefined();
     expect(world.excavatorRoot.getObjectByName("excavatorCab")).toBeDefined();
+  });
+
+  it("REQ-0003-001 scales the excavator as a vehicle beside the minifigure", () => {
+    const world = createFarmWorld();
+    const playerSize = new Vector3();
+    const excavatorSize = new Vector3();
+    const baseSize = new Vector3();
+    const cabSize = new Vector3();
+    const upperSize = new Vector3();
+    const boomSize = new Vector3();
+
+    new Box3().setFromObject(world.playerRoot).getSize(playerSize);
+    new Box3().setFromObject(world.excavatorRoot).getSize(excavatorSize);
+    new Box3().setFromObject(world.excavatorCrawlerBase).getSize(baseSize);
+    new Box3().setFromObject(world.excavatorRoot.getObjectByName("excavatorCab")!).getSize(cabSize);
+    new Box3().setFromObject(world.excavatorUpper).getSize(upperSize);
+    new Box3().setFromObject(world.excavatorBoom).getSize(boomSize);
+
+    expect(excavatorSize.x).toBeGreaterThan(playerSize.x * 2);
+    expect(excavatorSize.y).toBeGreaterThan(playerSize.y * 1.05);
+    expect(baseSize.z).toBeGreaterThan(cabSize.z);
+    expect(boomSize.z).toBeGreaterThan(upperSize.z * 0.65);
   });
 
   it("REQ-0002-004 uses procedural LEGO parts across the full farm scene", () => {

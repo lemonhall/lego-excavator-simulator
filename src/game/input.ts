@@ -10,7 +10,24 @@ export class KeyboardInput {
       if (event.code === "KeyE") {
         this.interactLatch = true;
       }
-      if (["KeyW", "KeyA", "KeyS", "KeyD", "Space", "KeyE", "KeyQ", "KeyR"].includes(event.code)) {
+      if (
+        [
+          "KeyW",
+          "KeyA",
+          "KeyS",
+          "KeyD",
+          "Space",
+          "KeyE",
+          "KeyQ",
+          "KeyR",
+          "KeyJ",
+          "KeyL",
+          "KeyT",
+          "KeyG",
+          "KeyY",
+          "KeyH"
+        ].includes(event.code)
+      ) {
         event.preventDefault();
       }
     });
@@ -29,7 +46,13 @@ export class KeyboardInput {
       jump: this.pressed.has("Space"),
       interact: this.interactLatch,
       boomUp: this.pressed.has("KeyR"),
-      boomDown: this.pressed.has("KeyQ")
+      boomDown: this.pressed.has("KeyQ"),
+      upperLeft: this.pressed.has("KeyJ"),
+      upperRight: this.pressed.has("KeyL"),
+      stickIn: this.pressed.has("KeyT"),
+      stickOut: this.pressed.has("KeyG"),
+      bucketCurl: this.pressed.has("KeyY"),
+      bucketDump: this.pressed.has("KeyH")
     };
 
     this.interactLatch = false;

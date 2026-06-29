@@ -36,22 +36,30 @@ function computeOverShoulderRig(state: GameState): CameraRig {
 
 function computeDriverCabRig(state: GameState): CameraRig {
   const excavator = state.excavator.position;
-  const heading = state.excavator.heading;
-  const forward = { x: Math.sin(heading), z: Math.cos(heading) };
-  const right = { x: Math.cos(heading), z: -Math.sin(heading) };
+  const heading = getDriverHeading(state);
+  const forward = { x: Math.sin(heading), z: -Math.cos(heading) };
+  const right = { x: Math.cos(heading), z: Math.sin(heading) };
 
   return {
     mode: "driverCab",
     position: {
-      x: excavator.x - right.x * 1.15 - forward.x * 0.85,
-      y: excavator.y + 1.95,
-      z: excavator.z - right.z * 1.15 - forward.z * 0.85
+      x: excavator.x - right.x * 1.25 - forward.x * 1.85,
+      y: excavator.y + 2.55,
+      z: excavator.z - right.z * 1.25 - forward.z * 1.85
     },
     target: {
-      x: excavator.x + right.x * 2.35 + forward.x * 0.85,
-      y: excavator.y + 1.12,
-      z: excavator.z + right.z * 2.35 + forward.z * 0.85
+      x: excavator.x + right.x * 0.45 + forward.x * 4.2,
+      y: excavator.y + 1.25,
+      z: excavator.z + right.z * 0.45 + forward.z * 4.2
     },
     lerp: 0.45
   };
+}
+
+function getDriverHeading(state: GameState): number {
+  const { crawlerHeading, upperRotation, heading } = state.excavator;
+  if (crawlerHeading === 0 && upperRotation === 0 && heading !== 0) {
+    return heading;
+  }
+  return crawlerHeading + upperRotation;
 }
