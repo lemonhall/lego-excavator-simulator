@@ -39,9 +39,14 @@ Upgrade the game from generic block art to a recognizable LEGO-like toy scene us
 ### REQ-0002-004: Farm Scene Uses LEGO Part Language
 
 - Motivation: The whole scene should share a toy construction language.
-- Scope: Rebuild barn roof, fence, loose studs, crop rows, and path details with procedural parts and rounded/plate geometry.
+- Scope: Rebuild barn roof, fence, loose studs, crop rows, path details, and the player minifigure with procedural parts and rounded/plate geometry. [Changed by ECN-0002]
 - Non-goals: No mission gameplay or terrain deformation.
 - Acceptance:
   - World tests prove at least 70 total objects tagged `partSystem = "procedural-lego"`.
   - World tests prove at least 40 visible studs in the scene.
+  - World tests prove the player exposes head, torso, left/right arms, and left/right legs. [Added by ECN-0002]
+  - World tests prove the player exposes a face group with eyes and mouth, plus a minifigure torso chest panel. [Added by ECN-0003]
+  - World tests prove the player has construction worker identifiers: hard hat, safety vest, blue sleeves, yellow hands, and orange pants. [Added by ECN-0003]
+  - World tests and screenshot QA prove the player is rebuilt from official construction-worker minifigure part language: seated hard hat, cylindrical head, smile face decal, flat vest torso print, C-claw hands, and leg print details. [Added by ECN-0004]
+  - State tests prove walking updates `walkPhase` and idle input clears `moving`. [Added by ECN-0002]
   - Existing canvas render E2E tests continue passing.

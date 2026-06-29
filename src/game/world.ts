@@ -1,13 +1,17 @@
 import {
   AmbientLight,
   BoxGeometry,
+  CircleGeometry,
   Color,
+  CylinderGeometry,
   DirectionalLight,
+  DoubleSide,
   Fog,
   Group,
   Mesh,
   MeshPhysicalMaterial,
   Object3D,
+  RingGeometry,
   PointLight,
   Scene,
   SphereGeometry,
@@ -21,6 +25,7 @@ import {
   createWheelPart,
   markPart
 } from "./legoParts";
+import { OFFICIAL_WORKER_MODEL_PATH } from "./officialWorkerModel";
 
 export interface FarmWorld {
   scene: Scene;
@@ -33,6 +38,8 @@ const plastic = {
   grass: createLegoPlasticMaterial("#57a342"),
   path: createLegoPlasticMaterial("#bd9050"),
   barnRed: createLegoPlasticMaterial("#b50018"),
+  hardHatRed: createLegoPlasticMaterial("#d71920"),
+  safetyOrange: createLegoPlasticMaterial("#f47b20"),
   roof: createLegoPlasticMaterial("#16283d"),
   yellow: createLegoPlasticMaterial("#ffd21f"),
   blue: createLegoPlasticMaterial("#0057b8"),
@@ -119,29 +126,378 @@ export function createFarmWorld(): FarmWorld {
 
 function createPlayer(): Group {
   const root = new Group();
+  markPart(root, "playerMinifigure");
+  root.userData.minifigureVersion = "official-gltf-v4";
+  root.userData.officialModelPath = OFFICIAL_WORKER_MODEL_PATH;
 
-  const legs = createBrickPart({ name: "playerLegs", color: "#0057b8", studsX: 1, studsZ: 1, height: 0.48 });
-  legs.scale.set(0.85, 1, 0.62);
-  legs.position.y = 0.02;
-  root.add(legs);
+  const modelMount = new Group();
+  modelMount.name = "officialWorkerModelMount";
+  modelMount.visible = false;
+  root.add(modelMount);
 
-  const torso = createBrickPart({ name: "playerTorso", color: "#ffd21f", studsX: 2, studsZ: 1, height: 0.58 });
-  torso.scale.set(0.84, 1, 0.62);
-  torso.position.y = 0.55;
-  root.add(torso);
+  const fallback = new Group();
+  fallback.name = "playerProceduralFallback";
+  root.add(fallback);
 
-  const head = createBrickPart({ name: "playerHeadBrick", color: "#ffd21f", studsX: 1, studsZ: 1, height: 0.34 });
+  const leftLeg = createLeg("playerLeftLeg");
+  leftLeg.position.set(-0.14, 0.62, 0);
+  fallback.add(leftLeg);
+
+  const rightLeg = createLeg("playerRightLeg");
+  rightLeg.position.set(0.14, 0.62, 0);
+  fallback.add(rightLeg);
+
+  const hips = createPlatePart({ name: "playerHips", color: "#f47b20", studsX: 2, studsZ: 1 });
+  hips.scale.set(0.72, 0.72, 0.52);
+  hips.position.y = 0.66;
+  fallback.add(hips);
+
+  const torso = createTrapezoidTorso();
+  torso.position.y = 0.86;
+  fallback.add(torso);
+  fallback.add(createChestPanel());
+
+  const leftArm = createArm("playerLeftArm");
+  leftArm.position.set(-0.5, 1.3, 0);
+  fallback.add(leftArm);
+
+  const rightArm = createArm("playerRightArm");
+  rightArm.position.set(0.5, 1.3, 0);
+  fallback.add(rightArm);
+
+  const head = new Mesh(new CylinderGeometry(0.24, 0.24, 0.36, 32), plastic.yellow);
   head.name = "playerHead";
-  head.scale.set(0.72, 1, 0.72);
-  head.position.y = 1.22;
-  root.add(head);
+  head.position.y = 1.5;
+  head.castShadow = true;
+  head.receiveShadow = true;
+  head.userData.materialKind = "legoPlastic";
+  head.userData.headShape = "cylinder";
+  markPart(head, "playerHeadCylinder");
+  fallback.add(head);
+  fallback.add(createPlayerFace());
 
-  const cap = createPlatePart({ name: "playerCap", color: "#0057b8", studsX: 1, studsZ: 1 });
-  cap.scale.set(0.78, 1, 0.78);
-  cap.position.y = 1.62;
-  root.add(cap);
+  fallback.add(createHardHat());
 
   return root;
+}
+
+function createTrapezoidTorso(): Group {
+  const torso = new Group();
+  torso.name = "playerTorso";
+  torso.userData.bodyShape = "minifigureTorso";
+  torso.userData.taperedShape = "trapezoidPrint";
+  torso.userData.shoulderWidth = 0.72;
+  torso.userData.waistWidth = 0.5;
+  markPart(torso, "playerTorso");
+
+  const chest = createRoundedPanel("playerTorsoChest", 0.64, 0.46, 0.3, plastic.safetyOrange);
+  chest.position.y = 0.14;
+  torso.add(chest);
+
+  const waist = createRoundedPanel("playerTorsoWaist", 0.5, 0.18, 0.28, plastic.safetyOrange);
+  waist.position.y = -0.2;
+  torso.add(waist);
+
+  const shoulderCap = createRoundedPanel("playerTorsoShoulderCap", 0.72, 0.16, 0.3, plastic.safetyOrange);
+  shoulderCap.position.y = 0.4;
+  torso.add(shoulderCap);
+
+  return torso;
+}
+
+function createPlayerFace(): Group {
+  const face = new Group();
+  face.name = "playerFace";
+  face.position.set(0, 1.53, -0.245);
+  markPart(face, "playerFace");
+
+  const decal = createRoundedPanel("playerFaceDecal", 0.3, 0.22, 0.01, plastic.yellow);
+  decal.position.set(0, -0.005, -0.003);
+  decal.userData.printSurface = "flatDecal";
+  decal.userData.faceStyle = "officialWorkerSmile";
+  decal.visible = false;
+  face.add(decal);
+
+  const leftEye = new Mesh(new CylinderGeometry(0.022, 0.022, 0.012, 16), plastic.black);
+  leftEye.name = "playerLeftEye";
+  leftEye.rotation.x = Math.PI / 2;
+  leftEye.position.set(-0.075, 0.055, -0.014);
+  leftEye.scale.set(1.25, 1.25, 1);
+  markPart(leftEye, "facePrint");
+  face.add(leftEye);
+
+  const rightEye = new Mesh(new CylinderGeometry(0.022, 0.022, 0.012, 16), plastic.black);
+  rightEye.name = "playerRightEye";
+  rightEye.rotation.x = Math.PI / 2;
+  rightEye.position.set(0.075, 0.055, -0.014);
+  rightEye.scale.set(1.25, 1.25, 1);
+  markPart(rightEye, "facePrint");
+  face.add(rightEye);
+
+  const smile = createFaceDisc("playerSmile", 0.105, 0.07, plastic.black);
+  smile.position.set(0, -0.055, -0.026);
+  face.add(smile);
+
+  const teeth = createFaceDisc("playerSmileTeeth", 0.075, 0.022, plastic.white);
+  teeth.position.set(0, -0.034, -0.032);
+  face.add(teeth);
+
+  const tongue = createFaceDisc("playerSmileTongue", 0.045, 0.016, createLegoPlasticMaterial("#c22b2f"));
+  tongue.position.set(0.015, -0.095, -0.035);
+  face.add(tongue);
+
+  const legacyMouth = new Mesh(new RingGeometry(0.075, 0.096, 32, 1, Math.PI * 0.12, Math.PI * 0.78), plastic.black);
+  legacyMouth.name = "playerMouth";
+  legacyMouth.position.set(0, -0.055, -0.04);
+  legacyMouth.rotation.z = Math.PI;
+  legacyMouth.visible = false;
+  markPart(legacyMouth, "facePrint");
+  face.add(legacyMouth);
+
+  return face;
+}
+
+function createFaceDisc(name: string, radiusX: number, radiusY: number, material: MeshPhysicalMaterial): Mesh {
+  const disc = new Mesh(new CircleGeometry(1, 32), material);
+  disc.name = name;
+  disc.scale.set(radiusX, radiusY, 1);
+  disc.material.side = DoubleSide;
+  markPart(disc, "facePrint");
+  return disc;
+}
+
+function createChestPanel(): Group {
+  const chest = new Group();
+  chest.name = "playerChestPanel";
+  chest.position.set(0, 1.02, -0.165);
+  markPart(chest, "chestPrint");
+
+  const torsoDecal = createRoundedPanel("playerTorsoDecal", 0.58, 0.55, 0.008, plastic.safetyOrange);
+  torsoDecal.position.set(0, 0.04, -0.004);
+  torsoDecal.userData.printSurface = "flatDecal";
+  torsoDecal.userData.decalStyle = "officialWorkerVest";
+  chest.add(torsoDecal);
+
+  const vest = createRoundedPanel("playerSafetyVest", 0.54, 0.42, 0.01, plastic.safetyOrange);
+  vest.position.set(0, 0.05, -0.012);
+  vest.userData.colorRole = "safetyOrange";
+  chest.add(vest);
+
+  const panel = createRoundedPanel("playerChestBluePanel", 0.16, 0.31, 0.012, plastic.blue);
+  panel.position.set(0, 0.09, -0.02);
+  chest.add(panel);
+
+  const collarLeft = createRoundedPanel("playerLeftBlueCollar", 0.05, 0.22, 0.012, plastic.blue);
+  collarLeft.position.set(-0.075, 0.18, -0.026);
+  collarLeft.rotation.z = -0.45;
+  chest.add(collarLeft);
+
+  const collarRight = createRoundedPanel("playerRightBlueCollar", 0.05, 0.22, 0.012, plastic.blue);
+  collarRight.position.set(0.075, 0.18, -0.026);
+  collarRight.rotation.z = 0.45;
+  chest.add(collarRight);
+
+  const waistNotch = createRoundedPanel("playerWaistNotch", 0.32, 0.055, 0.012, plastic.black);
+  waistNotch.position.set(0, -0.16, -0.03);
+  chest.add(waistNotch);
+
+  const zipper = createRoundedPanel("playerVestZipper", 0.018, 0.41, 0.014, plastic.black);
+  zipper.position.set(0, 0.03, -0.034);
+  chest.add(zipper);
+
+  const leftStrap = createRoundedPanel("playerLeftReflectiveStripe", 0.055, 0.38, 0.014, plastic.white);
+  leftStrap.name = "playerLeftVestStripe";
+  leftStrap.position.set(-0.18, 0.02, -0.038);
+  chest.add(leftStrap);
+
+  const rightStrap = createRoundedPanel("playerRightReflectiveStripe", 0.055, 0.38, 0.014, plastic.white);
+  rightStrap.name = "playerRightVestStripe";
+  rightStrap.position.set(0.18, 0.02, -0.038);
+  chest.add(rightStrap);
+
+  const leftCross = createRoundedPanel("playerLeftVestCrossStripe", 0.18, 0.055, 0.014, plastic.white);
+  leftCross.position.set(-0.18, 0.05, -0.042);
+  chest.add(leftCross);
+
+  const rightCross = createRoundedPanel("playerRightVestCrossStripe", 0.18, 0.055, 0.014, plastic.white);
+  rightCross.position.set(0.18, 0.05, -0.042);
+  chest.add(rightCross);
+
+  const leftPocket = createRoundedPanel("playerLeftVestPocket", 0.12, 0.06, 0.014, plastic.black);
+  leftPocket.position.set(-0.19, -0.09, -0.046);
+  chest.add(leftPocket);
+
+  const rightPocket = createRoundedPanel("playerRightVestPocket", 0.12, 0.06, 0.014, plastic.black);
+  rightPocket.position.set(0.19, -0.09, -0.046);
+  chest.add(rightPocket);
+
+  return chest;
+}
+
+function createHardHat(): Group {
+  const hat = new Group();
+  hat.name = "playerHardHat";
+  hat.position.y = 1.66;
+  hat.userData.helmetFit = "seated";
+  markPart(hat, "hardHat");
+
+  const dome = new Mesh(new SphereGeometry(0.285, 32, 12, 0, Math.PI * 2, 0, Math.PI * 0.52), plastic.hardHatRed);
+  dome.name = "playerHardHatDome";
+  dome.scale.set(1, 0.58, 1);
+  dome.position.y = 0.02;
+  dome.castShadow = true;
+  dome.receiveShadow = true;
+  dome.userData.materialKind = "legoPlastic";
+  markPart(dome, "hardHatDome");
+  hat.add(dome);
+
+  const brim = new Mesh(new CylinderGeometry(0.33, 0.33, 0.035, 48), plastic.hardHatRed);
+  brim.name = "playerHardHatBrim";
+  brim.position.y = -0.025;
+  brim.scale.z = 0.84;
+  brim.castShadow = true;
+  brim.receiveShadow = true;
+  brim.userData.materialKind = "legoPlastic";
+  markPart(brim, "hardHatBrim");
+  hat.add(brim);
+
+  const frontBrim = new Mesh(new CylinderGeometry(0.18, 0.2, 0.03, 32), plastic.hardHatRed);
+  frontBrim.name = "playerHardHatFrontBrim";
+  frontBrim.position.set(0, -0.03, -0.255);
+  frontBrim.scale.set(1.45, 1, 0.34);
+  frontBrim.castShadow = true;
+  frontBrim.receiveShadow = true;
+  frontBrim.userData.materialKind = "legoPlastic";
+  markPart(frontBrim, "hardHatFrontBrim");
+  hat.add(frontBrim);
+
+  const centerRib = createRoundedPanel("playerHardHatCenterRib", 0.035, 0.055, 0.42, plastic.hardHatRed);
+  centerRib.position.y = 0.075;
+  hat.add(centerRib);
+
+  const leftRib = createRoundedPanel("playerHardHatLeftRib", 0.03, 0.045, 0.36, plastic.hardHatRed);
+  leftRib.position.set(-0.11, 0.055, 0);
+  leftRib.rotation.z = -0.12;
+  hat.add(leftRib);
+
+  const rightRib = createRoundedPanel("playerHardHatRightRib", 0.03, 0.045, 0.36, plastic.hardHatRed);
+  rightRib.position.set(0.11, 0.055, 0);
+  rightRib.rotation.z = 0.12;
+  hat.add(rightRib);
+
+  const leftHair = createRoundedPanel("playerLeftHairPatch", 0.07, 0.16, 0.04, plastic.wood);
+  leftHair.position.set(-0.25, -0.13, -0.02);
+  hat.add(leftHair);
+
+  const rightHair = createRoundedPanel("playerRightHairPatch", 0.07, 0.16, 0.04, plastic.wood);
+  rightHair.position.set(0.25, -0.13, -0.02);
+  hat.add(rightHair);
+
+  return hat;
+}
+
+function createArm(name: string): Group {
+  const pivot = new Group();
+  pivot.name = name;
+  markPart(pivot, "playerArm");
+
+  const isLeft = name === "playerLeftArm";
+  const side = isLeft ? -1 : 1;
+
+  const sleeve = createRoundedPanel(`${isLeft ? "playerLeftSleeve" : "playerRightSleeve"}`, 0.2, 0.42, 0.24, plastic.blue);
+  sleeve.position.set(side * 0.02, -0.22, 0);
+  sleeve.rotation.z = side * 0.12;
+  sleeve.userData.colorRole = "blueSleeve";
+  sleeve.userData.limbShape = "roundedSleeve";
+  pivot.add(sleeve);
+
+  const cuff = createRoundedPanel(`${isLeft ? "playerLeftCuff" : "playerRightCuff"}`, 0.22, 0.08, 0.24, plastic.yellow);
+  cuff.position.set(side * 0.05, -0.46, 0);
+  pivot.add(cuff);
+
+  const hand = createClawHand(isLeft ? "playerLeftClawHand" : "playerRightClawHand", side);
+  hand.position.set(side * 0.07, -0.56, -0.02);
+  hand.userData.colorRole = "yellowHand";
+  pivot.add(hand);
+
+  const legacyHandTag = new Group();
+  legacyHandTag.name = isLeft ? "playerLeftHand" : "playerRightHand";
+  legacyHandTag.userData.colorRole = "yellowHand";
+  pivot.add(legacyHandTag);
+
+  return pivot;
+}
+
+function createClawHand(name: string, side: number): Group {
+  const hand = new Group();
+  hand.name = name;
+  hand.userData.handShape = "minifigureClaw";
+  markPart(hand, "clawHand");
+
+  const palm = new Mesh(new CylinderGeometry(0.065, 0.065, 0.12, 18), plastic.yellow);
+  palm.name = `${name}Palm`;
+  palm.rotation.z = Math.PI / 2;
+  palm.castShadow = true;
+  palm.receiveShadow = true;
+  palm.userData.materialKind = "legoPlastic";
+  markPart(palm, "clawPalm");
+  hand.add(palm);
+
+  const hook = new Mesh(new RingGeometry(0.07, 0.095, 24, 1, Math.PI * 0.15, Math.PI * 1.35), plastic.yellow);
+  hook.name = `${name}Hook`;
+  hook.position.set(side * 0.055, -0.005, -0.005);
+  hook.rotation.y = Math.PI / 2;
+  hook.rotation.z = side * 0.25;
+  hook.castShadow = true;
+  hook.receiveShadow = true;
+  hook.userData.materialKind = "legoPlastic";
+  markPart(hook, "clawHook");
+  hand.add(hook);
+
+  return hand;
+}
+
+function createLeg(name: string): Group {
+  const pivot = new Group();
+  pivot.name = name;
+  markPart(pivot, "playerLeg");
+  const isLeft = name === "playerLeftLeg";
+
+  const leg = createRoundedPanel(`${name}Block`, 0.25, 0.58, 0.28, plastic.safetyOrange);
+  leg.position.y = -0.29;
+  leg.userData.colorRole = "orangePants";
+  pivot.add(leg);
+
+  const foot = createRoundedPanel(`${name}Foot`, 0.28, 0.13, 0.42, plastic.safetyOrange);
+  foot.position.set(0, -0.62, -0.06);
+  foot.userData.colorRole = "orangePants";
+  pivot.add(foot);
+
+  const cavity = createRoundedPanel(`${name}FootCavity`, 0.18, 0.055, 0.16, plastic.black);
+  cavity.position.set(0, -0.63, -0.22);
+  pivot.add(cavity);
+
+  if (isLeft) {
+    const reflector = createRoundedPanel("playerLeftLegReflector", 0.19, 0.055, 0.02, plastic.white);
+    reflector.position.set(0, -0.22, -0.15);
+    pivot.add(reflector);
+
+    const decal = createRoundedPanel("playerLeftLegDecal", 0.21, 0.09, 0.012, plastic.white);
+    decal.position.set(0, -0.24, -0.166);
+    decal.userData.printSurface = "flatDecal";
+    pivot.add(decal);
+  } else {
+    const badge = createRoundedPanel("playerRightLegBadge", 0.16, 0.11, 0.02, plastic.black);
+    badge.position.set(0, -0.16, -0.15);
+    pivot.add(badge);
+
+    const decal = createRoundedPanel("playerRightLegDecal", 0.15, 0.13, 0.012, plastic.black);
+    decal.position.set(0, -0.16, -0.166);
+    decal.userData.printSurface = "flatDecal";
+    pivot.add(decal);
+  }
+
+  return pivot;
 }
 
 function createExcavator(): { root: Group; boom: Group } {

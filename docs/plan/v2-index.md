@@ -26,7 +26,7 @@ Replace generic cubes with a reusable procedural LEGO-like part system, then reb
 | REQ-0002-001 | PRD-0002 | v2 M1 | `src/game/legoParts.test.ts` | none | `npm test` passed 2026-06-29 | done |
 | REQ-0002-002 | PRD-0002 | v2 M1/M3 | `src/game/legoParts.test.ts`; `src/game/world.test.ts` | `tests/e2e/game.spec.ts` | `npm test`; `npm run build`; `npm run e2e` passed 2026-06-29 | done |
 | REQ-0002-003 | PRD-0002 | v2 M2/M3 | `src/game/world.test.ts` | `tests/e2e/game.spec.ts` | `npm test`; screenshot QA passed 2026-06-29 | done |
-| REQ-0002-004 | PRD-0002 | v2 M2/M3 | `src/game/world.test.ts` | `tests/e2e/game.spec.ts` | `npm test`; screenshot QA passed 2026-06-29 | done |
+| REQ-0002-004 | PRD-0002 | v2 M2/M3 | `src/game/world.test.ts` | `tests/e2e/game.spec.ts` | `npm test`; user screenshot QA rejected player minifigure fidelity 2026-06-29 | superseded by v3 |
 
 ## ECN Index
 
@@ -65,10 +65,15 @@ No ECN records for v2 at plan start.
 |---|---|---|---|
 | NOTE | git::workspace::metadata-unavailable | `git status` previously reported no repository metadata | Recorded; does not block local implementation verification |
 | NOTE | visuals::v2::not-ldraw-exact | v2 uses procedural LEGO-like parts, not exact LDraw/BrickLink assets | Accepted by v2 scope; LDraw remains a future option |
+| MAJOR | player::REQ-0002-004::not-minifigure-no-walk | User screenshot review reported stacked-block player and no arm/leg walking animation | Fixed by ECN-0002; state exposes `moving/facing/walkPhase`, player has named limbs, screenshot QA captured walking pose |
+| MAJOR | player::REQ-0002-004::no-face-box-torso | User screenshot review reported no face/front cue and torso unlike a minifigure | Fixed by ECN-0003; player has face group, eyes, mouth, chest panel, and minifigure torso metadata |
+| BLOCKER | player::REQ-0002-004::abstract-worker-not-official-minifigure | User second screenshot review rejected the player as too abstract versus official worker reference | Escalated to ECN-0004 and v3 official-worker minifigure rebuild |
 
 ## Difference List
 
 - LDraw/BrickLink import was not implemented in v2; this remains the path for exact part accuracy if procedural parts are still insufficient.
+- Player walk animation is simple sinusoidal limb swing, not a full animation rig.
+- Player face and torso geometry details were insufficient; v3 will rebuild the player with official-worker part decomposition and flat decal surfaces.
 
 ## Tashan Trigger Audit
 

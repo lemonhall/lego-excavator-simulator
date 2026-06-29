@@ -22,6 +22,9 @@ export interface PlayerState {
   velocity: Vec3;
   grounded: boolean;
   visible: boolean;
+  moving: boolean;
+  facing: number;
+  walkPhase: number;
 }
 
 export interface ExcavatorState {
@@ -72,7 +75,10 @@ export function createInitialGameState(options: InitialGameStateOptions = {}): G
       position: playerPosition,
       velocity: { x: 0, y: 0, z: 0 },
       grounded: true,
-      visible: mode === "onFoot"
+      visible: mode === "onFoot",
+      moving: false,
+      facing: Math.PI,
+      walkPhase: 0
     },
     excavator: {
       position: excavatorPosition,
@@ -118,6 +124,13 @@ export function updateGameState(state: GameState, input: GameInput, dt: number):
 
 function updatePlayer(state: GameState, input: GameInput, dt: number): void {
   const direction = movementDirection(input);
+  const moving = direction.x !== 0 || direction.z !== 0;
+  state.player.moving = moving;
+  if (moving) {
+    state.player.facing = Math.atan2(direction.x, direction.z);
+    state.player.walkPhase += dt * PLAYER_SPEED * 2.6;
+  }
+
   state.player.position.x += direction.x * PLAYER_SPEED * dt;
   state.player.position.z += direction.z * PLAYER_SPEED * dt;
 
@@ -195,7 +208,10 @@ function cloneState(state: GameState): GameState {
       position: cloneVec3(state.player.position),
       velocity: cloneVec3(state.player.velocity),
       grounded: state.player.grounded,
-      visible: state.player.visible
+      visible: state.player.visible,
+      moving: state.player.moving,
+      facing: state.player.facing,
+      walkPhase: state.player.walkPhase
     },
     excavator: {
       position: cloneVec3(state.excavator.position),

@@ -104,4 +104,23 @@ describe("game state", () => {
       excavatorPosition: { x: 3, y: 0, z: 3 }
     });
 
-    const next = up
+    const next = updateGameState(state, { ...idleInput(), forward: true }, 1);
+
+    expect(next.excavator.position.z).toBeLessThan(state.excavator.position.z);
+    expect(next.player.position).toEqual(state.player.position);
+  });
+
+  it("REQ-0001-003 clamps boom angle inside configured limits", () => {
+    let state = createInitialGameState({ mode: "driving" });
+
+    for (let i = 0; i < 200; i += 1) {
+      state = updateGameState(state, { ...idleInput(), boomUp: true }, 0.016);
+    }
+    expect(state.excavator.boomAngle).toBe(BOOM_LIMITS.max);
+
+    for (let i = 0; i < 400; i += 1) {
+      state = updateGameState(state, { ...idleInput(), boomDown: true }, 0.016);
+    }
+    expect(state.excavator.boomAngle).toBe(BOOM_LIMITS.min);
+  });
+});
