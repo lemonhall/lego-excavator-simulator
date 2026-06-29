@@ -1,9 +1,12 @@
 import {
   ACESFilmicToneMapping,
+  Box3,
   Mesh,
   MeshPhysicalMaterial,
+  Object3D,
   PCFSoftShadowMap,
   PerspectiveCamera,
+  Vector3,
   WebGLRenderer
 } from "three";
 import { computeCameraRig } from "./camera";
@@ -124,8 +127,96 @@ function getOfficialRigDebug(world: FarmWorld): Record<string, unknown> {
     rightHandParent: world.playerRoot.getObjectByName("playerRightHand")?.parent?.name,
     leftArmPivot: world.playerRoot.getObjectByName("playerLeftArm")?.userData.animationPivot,
     rightArmPivot: world.playerRoot.getObjectByName("playerRightArm")?.userData.animationPivot,
-    physicalPlasticMeshes: plasticMeshCount
+    physicalPlasticMeshes: plasticMeshCount,
+    limbCenters: getOfficialLimbCenters(world),
+    materialSample: getOfficialMaterialSample(world),
+    namedRigNodes: getNamedRigNodes(world)
   };
+}
+
+function getOfficialLimbCenters(world: FarmWorld): Record<string, unknown> {
+  const leftArm = getWorldCenter(world.playerRoot, "playerLeftArmPart");
+  const rightArm = getWorldCenter(world.playerRoot, "playerRightArmPart");
+  const leftHand = getWorldCenter(world.playerRoot, "playerLeftHand");
+  const rightHand = getWorldCenter(world.playerRoot, "playerRightHand");
+
+  return {
+    leftArm,
+    rightArm,
+    leftHand,
+    rightHand,
+    leftHandArmDistance: leftArm && leftHand ? leftArm.distanceTo(leftHand) : undefined,
+    rightHandArmDistance: rightArm && rightHand ? rightArm.distanceTo(rightHand) : undefined
+  };
+}
+
+function getWorldCenter(root: FarmWorld["playerRoot"], name: string): Vector3 | undefined {
+  const object = root.getObjectByName(name);
+  if (!object) {
+    return undefined;
+  }
+
+  const bounds = new Box3().setFromObject(object);
+  const center = new Vector3();
+  bounds.getCenter(center);
+  return center;
+}
+
+function getOfficialMaterialSample(world: FarmWorld): Record<string, unknown> | undefined {
+  let sample: MeshPhysicalMaterial | undefined;
+  world.playerRoot.traverse((object) => {
+    if (!sample && object instanceof Mesh && object.material instanceof MeshPhysicalMaterial && object.material.userData.materialKind === "legoPlastic") {
+      sample = object.material;
+    }
+  });
+
+  if (!sample) {
+    return undefined;
+  }
+
+  return {
+    clearcoat: sample.clearcoat,
+    clearcoatRoughness: sample.clearcoatRoughness,
+    roughness: sample.roughness,
+    envMapIntensity: sample.envMapIntensity,
+    color: `#${sample.color.getHexString()}`
+  };
+}
+
+function getNamedRigNodes(world: FarmWorld): Record<string, unknown>[] {
+  const nodes: Record<string, unknown>[] = [];
+  world.playerRoot.traverse((object) => {
+    if (object.name.includes("Arm") || object.name.includes("Hand")) {
+      nodes.push({
+        name: object.name,
+        parent: object.parent?.name,
+        visible: object.visible,
+        path: getObjectPath(object),
+        center: getCenterArray(object)
+      });
+    }
+  });
+  return nodes;
+}
+
+function getObjectPath(object: Object3D): string {
+  const names: string[] = [];
+  let current: Object3D | null = object;
+  while (current) {
+    names.unshift(current.name || "(unnamed)");
+    current = current.parent;
+  }
+  return names.join("/");
+}
+
+function getCenterArray(object: Object3D): number[] {
+  const bounds = new Box3().setFromObject(object);
+  if (bounds.isEmpty()) {
+    return object.getWorldPosition(new Vector3()).toArray();
+  }
+  const center = new Vector3();
+  bounds.getCenter(center);
+  return center.toArray();
 }
 
 function syncWorld(world: FarmWorld, state: GameState): void {

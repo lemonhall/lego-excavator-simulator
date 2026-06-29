@@ -34,10 +34,21 @@ describe("official worker model normalization", () => {
     expect((importedMesh as Mesh).material).toBeInstanceOf(MeshPhysicalMaterial);
     const material = (importedMesh as Mesh).material as MeshPhysicalMaterial;
     expect(material.userData.materialKind).toBe("legoPlastic");
-    expect(material.clearcoat).toBeGreaterThanOrEqual(0.72);
-    expect(material.clearcoatRoughness).toBeCloseTo(0.18);
-    expect(material.roughness).toBeCloseTo(0.26);
-    expect(material.envMapIntensity).toBeCloseTo(1.9);
+    expect(material.clearcoat).toBeGreaterThanOrEqual(0.84);
+    expect(material.clearcoatRoughness).toBeCloseTo(0.12);
+    expect(material.roughness).toBeCloseTo(0.2);
+    expect(material.envMapIntensity).toBeCloseTo(2.2);
+  });
+
+  it("assigns suffixed duplicate hand part names to both arm pivots", () => {
+    const source = createWorkerPartTree();
+
+    const model = normalizeOfficialWorkerModel(source);
+
+    expect(model.getObjectByName("playerLeftArm")?.getObjectByName("playerLeftHand")).toBeDefined();
+    expect(model.getObjectByName("playerRightArm")?.getObjectByName("playerRightHand")).toBeDefined();
+    expect(countObjectsNamed(model, "playerLeftHand")).toBe(1);
+    expect(countObjectsNamed(model, "playerRightHand")).toBe(1);
   });
 });
 
@@ -51,9 +62,19 @@ function createWorkerPartTree(): Group {
   root.add(createPart("3816_dot_dat", "leftLegMesh", -0.18, 0.35, 0, 0.26, 0.7, 0.28));
   root.add(createPart("3817_dot_dat", "rightLegMesh", 0.18, 0.35, 0, 0.26, 0.7, 0.28));
   root.add(createPart("3820_dot_dat", "leftHandMesh", -0.62, 0.64, 0, 0.18, 0.18, 0.18));
-  root.add(createPart("3820_dot_dat", "rightHandMesh", 0.62, 0.64, 0, 0.18, 0.18, 0.18));
+  root.add(createPart("3820_dot_dat_1", "rightHandMesh", 0.62, 0.64, 0, 0.18, 0.18, 0.18));
 
   return root;
+}
+
+function countObjectsNamed(root: Group, name: string): number {
+  let count = 0;
+  root.traverse((object) => {
+    if (object.name === name) {
+      count += 1;
+    }
+  });
+  return count;
 }
 
 function createPart(name: string, meshName: string, x: number, y: number, z: number, width: number, height: number, depth: number): Group {

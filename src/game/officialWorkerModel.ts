@@ -92,11 +92,11 @@ function createScenePlasticMaterial(material: Material): MeshPhysicalMaterial {
   const baseColor = getMaterialColor(material);
   const plastic = new MeshPhysicalMaterial({
     color: baseColor,
-    roughness: 0.26,
+    roughness: 0.2,
     metalness: 0.02,
-    clearcoat: 0.72,
-    clearcoatRoughness: 0.18,
-    envMapIntensity: 1.9,
+    clearcoat: 0.84,
+    clearcoatRoughness: 0.12,
+    envMapIntensity: 2.2,
     transparent: material.transparent,
     opacity: material.opacity,
     side: material.side,
@@ -141,7 +141,7 @@ function createOfficialWorkerPivotRig(model: Group, source: Object3D): void {
   for (const side of ["left", "right"] as const) {
     const arm = findPart(arms, side);
     if (arm) {
-      const hand = findNearestPart(hands, arm, side);
+      const hand = assignNearestHandsToArms(arms, hands).get(arm);
       const pivot = createLimbPivot(`player${capitalizeSide(side)}Arm`, "shoulder", [arm, hand].filter(isClassifiedPart), root);
       model.userData[`${side}ArmPivot`] = pivot.position.toArray();
     }
@@ -157,7 +157,7 @@ function createOfficialWorkerPivotRig(model: Group, source: Object3D): void {
 function classifyOfficialWorkerParts(source: Object3D): ClassifiedPart[] {
   const candidates: Object3D[] = [];
   source.traverse((object) => {
-    if (["3818_dot_dat", "3819_dot_dat", "3820_dot_dat", "3816_dot_dat", "3817_dot_dat"].includes(object.name)) {
+    if (getPartKind(object.name)) {
       candidates.push(object);
     }
   });
@@ -165,18 +165,25 @@ function classifyOfficialWorkerParts(source: Object3D): ClassifiedPart[] {
   return candidates.map((object) => ({
     object,
     side: getObjectCenter(object).x < getModelCenterX(source) ? "left" : "right",
-    kind: getPartKind(object.name)
+    kind: getPartKind(object.name) ?? "leg"
   }));
 }
 
-function getPartKind(name: string): LimbKind {
-  if (name === "3818_dot_dat" || name === "3819_dot_dat") {
+function getPartKind(name: string): LimbKind | undefined {
+  if (isLDrawPartName(name, "3818_dot_dat") || isLDrawPartName(name, "3819_dot_dat")) {
     return "arm";
   }
-  if (name === "3820_dot_dat") {
+  if (isLDrawPartName(name, "3820_dot_dat")) {
     return "hand";
   }
-  return "leg";
+  if (isLDrawPartName(name, "3816_dot_dat") || isLDrawPartName(name, "3817_dot_dat")) {
+    return "leg";
+  }
+  return undefined;
+}
+
+function isLDrawPartName(name: string, partName: string): boolean {
+  return name === partName || name.startsWith(`${partName}_`);
 }
 
 function getModelCenterX(source: Object3D): number {
@@ -260,10 +267,19 @@ function findPart(parts: ClassifiedPart[], side: LimbSide): ClassifiedPart | und
   return parts.find((part) => part.side === side);
 }
 
-function findNearestPart(parts: ClassifiedPart[], target: ClassifiedPart, fallbackSide: LimbSide): ClassifiedPart | undefined {
-  const targetCenter = getObjectCenter(target.object);
-  const sameSide = parts.filter((part) => part.side === fallbackSide);
-  return sameSide.sort((a, b) => targetCenter.distanceTo(getObjectCenter(a.object)) - targetCenter.distanceTo(getObjectCenter(b.object)))[0];
+function assignNearestHandsToArms(arms: ClassifiedPart[], hands: ClassifiedPart[]): Map<ClassifiedPart, ClassifiedPart> {
+  const assignments = new Map<ClassifiedPart, ClassifiedPart>();
+  const orderedArms = [...arms].sort((a, b) => getObjectCenter(a.object).x - getObjectCenter(b.object).x);
+  const orderedHands = [...hands].sort((a, b) => getObjectCenter(a.object).x - getObjectCenter(b.object).x);
+
+  for (let index = 0; index < Math.min(orderedArms.length, orderedHands.length); index += 1) {
+    const arm = orderedArms[index];
+    const hand = orderedHands[index];
+    hand.side = arm.side;
+    assignments.set(arm, hand);
+  }
+
+  return assignments;
 }
 
 function getObjectCenter(object: Object3D): Vector3 {

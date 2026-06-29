@@ -167,6 +167,8 @@ describe("farm world", () => {
     expect(world.scene.environment).toBeDefined();
     expect(world.scene.getObjectByName("plasticKeyLight")).toBeDefined();
     expect(world.scene.getObjectByName("plasticHighlightLight")).toBeDefined();
+    expect(world.scene.getObjectByName("plasticSkyBounceLight")).toBeDefined();
+    expect(world.playerRoot.getObjectByName("playerPlasticFillLight")).toBeDefined();
   });
 
   it("REQ-0002-003 rebuilds excavator from procedural LEGO parts", () => {

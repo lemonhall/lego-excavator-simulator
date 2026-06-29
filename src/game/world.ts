@@ -8,6 +8,7 @@ import {
   DoubleSide,
   Fog,
   Group,
+  HemisphereLight,
   Mesh,
   MeshPhysicalMaterial,
   Object3D,
@@ -66,9 +67,13 @@ export function createFarmWorld(): FarmWorld {
   scene.environment = new Texture();
   scene.fog = new Fog("#8fd0ff", 30, 82);
 
-  const ambient = new AmbientLight("#dbeafe", 0.78);
+  const ambient = new AmbientLight("#dbeafe", 0.92);
   ambient.name = "plasticAmbientLight";
   scene.add(ambient);
+
+  const skyBounce = new HemisphereLight("#dbeafe", "#5da044", 1.18);
+  skyBounce.name = "plasticSkyBounceLight";
+  scene.add(skyBounce);
 
   const sun = new DirectionalLight("#fff7db", 2.45);
   sun.name = "plasticKeyLight";
@@ -103,6 +108,7 @@ export function createFarmWorld(): FarmWorld {
 
   const playerRoot = createPlayer();
   playerRoot.name = "player";
+  addPlayerPlasticFillLight(playerRoot);
   scene.add(playerRoot);
 
   const { root: excavatorRoot, boom: excavatorBoom } = createExcavator();
@@ -122,6 +128,14 @@ export function createFarmWorld(): FarmWorld {
     excavatorRoot,
     excavatorBoom
   };
+}
+
+function addPlayerPlasticFillLight(playerRoot: Group): void {
+  const fill = new PointLight("#fff1c9", 14, 5.5, 1.2);
+  fill.name = "playerPlasticFillLight";
+  fill.position.set(0.75, 1.65, 1.35);
+  fill.userData.lightRole = "playerPlasticFill";
+  playerRoot.add(fill);
 }
 
 function createPlayer(): Group {
