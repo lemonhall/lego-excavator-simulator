@@ -14,7 +14,7 @@ import { deriveSoundState, GameAudioController } from "./audio";
 import { computeCameraRig } from "./camera";
 import { KeyboardInput } from "./input";
 import { loadOfficialWorkerModel } from "./officialWorkerModel";
-import { createInitialGameState, updateGameState, type GameState } from "./state";
+import { createInitialGameState, updateGameState, type DestructibleState, type GameState } from "./state";
 import { createFarmWorld, type FarmWorld } from "./world";
 
 export interface GameApp {
@@ -30,6 +30,7 @@ declare global {
       limbRotations?: Record<string, number | undefined>;
       officialRig?: Record<string, unknown>;
       excavator?: Record<string, unknown>;
+      destructibles?: Record<string, unknown>;
       audio?: Record<string, unknown>;
     };
   }
@@ -127,6 +128,7 @@ function syncDebugState(world: FarmWorld, state: GameState, audio: GameAudioCont
     officialModelBounds: world.playerRoot.userData.officialModelBounds,
     fallbackVisible: world.playerRoot.getObjectByName("playerProceduralFallback")?.visible,
     excavator: getExcavatorDebug(world, state),
+    destructibles: getDestructibleDebug(world, state),
     limbRotations: {
       leftArm: world.playerRoot.getObjectByName("playerLeftArm")?.rotation.x,
       rightArm: world.playerRoot.getObjectByName("playerRightArm")?.rotation.x,
@@ -303,6 +305,7 @@ function syncWorld(world: FarmWorld, state: GameState): void {
   world.excavatorStick.rotation.x = state.excavator.stickAngle;
   world.excavatorBucket.rotation.x = state.excavator.bucketAngle;
   syncExcavatorOpacity(world, state);
+  syncDestructibles(world, state);
 }
 
 function syncExcavatorOpacity(world: FarmWorld, state: GameState): void {
@@ -351,6 +354,61 @@ function syncPlayerWalk(world: FarmWorld, state: GameState): void {
   world.playerRoot.position.y = state.player.position.y + bounce;
 }
 
+function syncDestructibles(world: FarmWorld, state: GameState): void {
+  const targetsById = new Map(state.destructibles.map((target) => [target.id, target]));
+
+  world.destructibleRoots.forEach((root) => {
+    const target = targetsById.get(String(root.userData.destructibleId));
+    if (!target) {
+      return;
+    }
+
+    root.userData.damageStatus = target.status;
+    root.traverse((object) => {
+      if (object.userData.destructibleCore === true) {
+        object.visible = target.status !== "detached";
+      }
+
+      if (object.userData.destructibleShard === true) {
+        syncDestructibleShard(object, target);
+      }
+    });
+  });
+}
+
+function syncDestructibleShard(object: Object3D, target: DestructibleState): void {
+  const basePosition = object.userData.basePosition;
+  const baseRotation = object.userData.baseRotation;
+  if (basePosition instanceof Vector3) {
+    object.position.copy(basePosition);
+  }
+  if (baseRotation && typeof baseRotation.copy === "function") {
+    object.rotation.copy(baseRotation);
+  }
+
+  object.visible = target.status !== "intact";
+  if (target.status === "intact") {
+    return;
+  }
+
+  const hash = stableNameHash(object.name);
+  const spread = target.status === "detached" ? 0.62 : 0.22;
+  const lift = target.status === "detached" ? 0.18 : 0.06;
+  object.position.x += Math.sin(hash) * spread;
+  object.position.y += lift + (hash % 3) * 0.04;
+  object.position.z += Math.cos(hash * 1.7) * spread;
+  object.rotation.x += 0.35 + (hash % 5) * 0.08;
+  object.rotation.z += Math.sin(hash * 0.7) * 0.65;
+}
+
+function stableNameHash(name: string): number {
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) {
+    hash = (hash * 31 + name.charCodeAt(i)) % 997;
+  }
+  return hash;
+}
+
 function updateCamera(camera: PerspectiveCamera, state: GameState): void {
   const rig = computeCameraRig(state);
 
@@ -376,11 +434,36 @@ function updateHud(hud: HTMLElement, state: GameState, audio: GameAudioControlle
   const modeLabel = state.mode === "driving" ? "驾驶挖掘机" : "步行";
   const cameraLabel = state.mode === "driving" ? "驾驶室视角" : "第三人称过肩";
   const audioLabel = audio.getDebugState().enabled === true ? "已启用" : "按任意控制键启用";
+  const detachedCount = state.destructibles.filter((target) => target.status === "detached").length;
+  const damagedCount = state.destructibles.filter((target) => target.status === "damaged").length;
   hud.innerHTML = `
     <div class="hud-title">LEGO EXCAVATOR FARM</div>
     <div data-testid="mode">状态：${modeLabel}</div>
     <div data-testid="camera-mode">镜头：${cameraLabel}</div>
     <div>WASD 行走/开车 | 空格 跳跃 | E 上车/下车 | J/L 上车回转 | U/O 大臂 | N/M 小臂 | Y/H 铲斗</div>
+    <div>拆卸：${detachedCount} 已拆 / ${damagedCount} 受损</div>
     <div data-testid="audio-mode">声音：${audioLabel}</div>
   `;
+}
+
+function getDestructibleDebug(world: FarmWorld, state: GameState): Record<string, unknown> {
+  let shardCount = 0;
+  let visibleShardCount = 0;
+  world.scene.traverse((object) => {
+    if (object.userData.destructibleShard === true) {
+      shardCount += 1;
+      if (object.visible) {
+        visibleShardCount += 1;
+      }
+    }
+  });
+
+  return {
+    targetCount: state.destructibles.length,
+    damagedCount: state.destructibles.filter((target) => target.status === "damaged").length,
+    detachedCount: state.destructibles.filter((target) => target.status === "detached").length,
+    shardCount: visibleShardCount,
+    totalShardCount: shardCount,
+    statuses: Object.fromEntries(state.destructibles.map((target) => [target.id, target.status]))
+  };
 }

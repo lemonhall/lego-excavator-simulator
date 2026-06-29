@@ -158,4 +158,52 @@ describe("game state", () => {
     expect(state.excavator.stickAngle).toBe(STICK_LIMITS.min);
     expect(state.excavator.bucketAngle).toBe(BUCKET_LIMITS.min);
   });
+
+  it("REQ-0004-001 registers barn, tree, and fence destructible targets", () => {
+    const state = createInitialGameState();
+
+    expect(state.destructibles.map((target) => target.id)).toEqual(
+      expect.arrayContaining(["barn", "tree0", "fence0"])
+    );
+    expect(new Set(state.destructibles.map((target) => target.kind))).toEqual(new Set(["barn", "tree", "fence"]));
+    expect(state.destructibles.every((target) => target.status === "intact")).toBe(true);
+  });
+
+  it("REQ-0004-002 detaches a fence when the moving excavator body hits it", () => {
+    const state = createInitialGameState({
+      mode: "driving",
+      excavatorPosition: { x: -14, y: 0, z: 8.4 }
+    });
+
+    const next = updateGameState(state, { ...idleInput(), backward: true }, 0.25);
+
+    expect(next.destructibles.find((target) => target.id === "fence0")?.status).toBe("detached");
+  });
+
+  it("REQ-0004-003 lets the bucket detach a tree while the body stays outside the tree radius", () => {
+    const state = createInitialGameState({
+      mode: "driving",
+      excavatorPosition: { x: -12, y: 0, z: 9.2 }
+    });
+
+    const next = updateGameState(state, { ...idleInput(), bucketDump: true }, 0.25);
+
+    expect(next.destructibles.find((target) => target.id === "tree0")?.status).toBe("detached");
+  });
+
+  it("REQ-0004-002 requires repeated impacts to detach the barn", () => {
+    let state = createInitialGameState({
+      mode: "driving",
+      excavatorPosition: { x: -9, y: 0, z: -5.9 }
+    });
+
+    state = updateGameState(state, { ...idleInput(), forward: true }, 0.2);
+    expect(state.destructibles.find((target) => target.id === "barn")?.status).toBe("damaged");
+
+    for (let i = 0; i < 5; i += 1) {
+      state = updateGameState(state, { ...idleInput(), forward: true }, 0.2);
+    }
+
+    expect(state.destructibles.find((target) => target.id === "barn")?.status).toBe("detached");
+  });
 });

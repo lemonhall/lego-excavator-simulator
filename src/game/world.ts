@@ -38,6 +38,7 @@ export interface FarmWorld {
   excavatorBoom: Group;
   excavatorStick: Group;
   excavatorBucket: Group;
+  destructibleRoots: Group[];
 }
 
 const plastic = {
@@ -112,10 +113,7 @@ export function createFarmWorld(): FarmWorld {
   const path = createPath();
   scene.add(path);
 
-  const barn = createBarn();
-  barn.name = "barn";
-  barn.position.set(-9, 0, -8);
-  barn.userData.farmDecor = true;
+  const barn = createDestructibleBarn();
   scene.add(barn);
 
   const playerRoot = createPlayer();
@@ -135,9 +133,9 @@ export function createFarmWorld(): FarmWorld {
   excavatorRoot.position.set(3, 0, -3);
   scene.add(excavatorRoot);
 
-  addFence(scene);
+  const fenceRoots = addFence(scene);
   addCrops(scene);
-  addTrees(scene);
+  const treeRoots = addTrees(scene);
   addLooseStuds(scene);
   addCameraAnchors(scene);
 
@@ -149,7 +147,8 @@ export function createFarmWorld(): FarmWorld {
     excavatorUpper,
     excavatorBoom,
     excavatorStick,
-    excavatorBucket
+    excavatorBucket,
+    destructibleRoots: [barn, ...treeRoots, ...fenceRoots]
   };
 }
 
@@ -782,13 +781,20 @@ function createPath(): Group {
   return path;
 }
 
-function addFence(scene: Scene): void {
+function addFence(scene: Scene): Group[] {
+  const roots: Group[] = [];
   for (let i = 0; i < 12; i += 1) {
+    const root = createDestructibleRoot(`destructibleFence${i}`, `fence${i}`);
+    root.position.set(-14 + i * 2.2, 0, 9);
     const post = createBrickPart({ name: `fencePost${i}`, color: "#8a5a32", studsX: 1, studsZ: 1, height: 0.7 });
     post.scale.set(0.5, 1, 0.5);
-    post.position.set(-14 + i * 2.2, 0, 9);
+    post.userData.destructibleCore = true;
     post.userData.farmDecor = true;
-    scene.add(post);
+    root.add(post);
+    root.add(createShard(`fenceShard${i}_0`, "#8a5a32", -0.22, 0.04, 0.1));
+    root.add(createShard(`fenceShard${i}_1`, "#8a5a32", 0.18, 0.06, -0.08));
+    scene.add(root);
+    roots.push(root);
   }
 
   for (let i = 0; i < 5; i += 1) {
@@ -798,6 +804,8 @@ function addFence(scene: Scene): void {
     rail.userData.farmDecor = true;
     scene.add(rail);
   }
+
+  return roots;
 }
 
 function addCrops(scene: Scene): void {
@@ -811,29 +819,80 @@ function addCrops(scene: Scene): void {
   }
 }
 
-function addTrees(scene: Scene): void {
+function addTrees(scene: Scene): Group[] {
   const positions = [
     { x: -12, z: 6 },
     { x: 13, z: 7 },
     { x: 12, z: -13 }
   ];
+  const roots: Group[] = [];
 
   positions.forEach((position, index) => {
+    const root = createDestructibleRoot(`destructibleTree${index}`, `tree${index}`);
+    root.position.set(position.x, 0, position.z);
     const trunk = createBrickPart({ name: `treeTrunk${index}`, color: "#8a5a32", studsX: 1, studsZ: 1, height: 1.1 });
-    trunk.position.set(position.x, 0, position.z);
     trunk.scale.set(0.7, 1, 0.7);
+    trunk.userData.destructibleCore = true;
     trunk.userData.farmDecor = true;
-    scene.add(trunk);
+    root.add(trunk);
 
     const leaves = new Mesh(new SphereGeometry(1.15, 12, 8), plastic.leaf);
     leaves.name = `treeLeaves${index}`;
-    leaves.position.set(position.x, 1.55, position.z);
+    leaves.position.set(0, 1.55, 0);
     leaves.castShadow = true;
     leaves.receiveShadow = true;
+    leaves.userData.destructibleCore = true;
     leaves.userData.farmDecor = true;
     markPart(leaves, "treeLeaves");
-    scene.add(leaves);
+    root.add(leaves);
+    root.add(createShard(`treeShard${index}_wood`, "#8a5a32", -0.28, 0.05, 0.1));
+    root.add(createShard(`treeShard${index}_leafA`, "#2f9b54", 0.22, 0.65, -0.12));
+    root.add(createShard(`treeShard${index}_leafB`, "#2f9b54", 0.02, 0.92, 0.24));
+    scene.add(root);
+    roots.push(root);
   });
+
+  return roots;
+}
+
+function createDestructibleBarn(): Group {
+  const root = createDestructibleRoot("destructibleBarn", "barn");
+  root.position.set(-9, 0, -8);
+
+  const barn = createBarn();
+  barn.name = "barn";
+  barn.userData.destructibleCore = true;
+  root.add(barn);
+
+  root.add(createShard("barnShardRed0", "#b50018", -0.9, 0.04, -0.35));
+  root.add(createShard("barnShardRed1", "#b50018", 0.8, 0.05, 0.22));
+  root.add(createShard("barnShardRoof0", "#16283d", -0.42, 1.05, -0.72));
+  root.add(createShard("barnShardRoof1", "#16283d", 0.44, 1.08, 0.68));
+  root.add(createShard("barnShardDoor", "#f4efe3", 0.08, 0.1, -1.06));
+
+  return root;
+}
+
+function createDestructibleRoot(name: string, id: string): Group {
+  const root = new Group();
+  root.name = name;
+  root.userData.destructibleId = id;
+  root.userData.farmDecor = true;
+  root.userData.intactPosition = root.position.clone();
+  root.userData.intactRotation = root.rotation.clone();
+  markPart(root, "destructibleAssembly");
+  return root;
+}
+
+function createShard(name: string, color: string, x: number, y: number, z: number): Group {
+  const shard = createPlatePart({ name, color, studsX: 1, studsZ: 1 });
+  shard.position.set(x, y, z);
+  shard.scale.set(0.78, 0.7, 0.78);
+  shard.visible = false;
+  shard.userData.destructibleShard = true;
+  shard.userData.basePosition = shard.position.clone();
+  shard.userData.baseRotation = shard.rotation.clone();
+  return shard;
 }
 
 function addLooseStuds(scene: Scene): void {

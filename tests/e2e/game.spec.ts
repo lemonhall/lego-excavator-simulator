@@ -111,4 +111,30 @@ test.describe("lego excavator game", () => {
     await expect(page.getByTestId("mode")).toContainText("步行");
     await expect(page.getByTestId("camera-mode")).toContainText("第三人称过肩");
   });
+
+  test("REQ-0004-002 and REQ-0004-004 drives into a destructible farm prop", async ({ page }) => {
+    await page.goto("/");
+
+    await page.keyboard.down("KeyD");
+    await page.waitForTimeout(520);
+    await page.keyboard.up("KeyD");
+    await page.keyboard.down("KeyW");
+    await page.waitForTimeout(520);
+    await page.keyboard.up("KeyW");
+    await page.keyboard.press("KeyE");
+
+    await expect(page.getByTestId("mode")).toContainText("驾驶挖掘机");
+
+    await page.keyboard.down("KeyA");
+    await page.waitForTimeout(5000);
+    await page.keyboard.up("KeyA");
+    await page.keyboard.down("KeyS");
+    await page.waitForTimeout(3700);
+    await page.keyboard.up("KeyS");
+
+    const destructibleDebug = await page.evaluate(() => window.__legoGameDebug?.destructibles);
+    expect(Number(destructibleDebug?.detachedCount)).toBeGreaterThan(0);
+    expect(Number(destructibleDebug?.shardCount)).toBeGreaterThan(0);
+    await expect(page.getByTestId("hud")).toContainText("拆卸");
+  });
 });

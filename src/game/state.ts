@@ -43,10 +43,24 @@ export interface ExcavatorState {
   bucketAngle: number;
 }
 
+export type DestructibleKind = "barn" | "tree" | "fence";
+export type DestructibleStatus = "intact" | "damaged" | "detached";
+
+export interface DestructibleState {
+  id: string;
+  kind: DestructibleKind;
+  position: Vec3;
+  hitRadius: number;
+  maxIntegrity: number;
+  integrity: number;
+  status: DestructibleStatus;
+}
+
 export interface GameState {
   mode: GameMode;
   player: PlayerState;
   excavator: ExcavatorState;
+  destructibles: DestructibleState[];
 }
 
 export interface InitialGameStateOptions {
@@ -86,6 +100,27 @@ const STICK_SPEED = 1.65;
 const BUCKET_SPEED = 2.25;
 const UPPER_SLEW_SPEED = 1.45;
 const INTERACTION_DISTANCE = 2.2;
+const BODY_IMPACT_RADIUS = 1.35;
+const BUCKET_IMPACT_RADIUS = 0.72;
+
+const DEFAULT_DESTRUCTIBLES: DestructibleState[] = [
+  { id: "barn", kind: "barn", position: { x: -9, y: 0, z: -8 }, hitRadius: 2.35, maxIntegrity: 3, integrity: 3, status: "intact" },
+  { id: "tree0", kind: "tree", position: { x: -12, y: 0, z: 6 }, hitRadius: 1.2, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "tree1", kind: "tree", position: { x: 13, y: 0, z: 7 }, hitRadius: 1.2, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "tree2", kind: "tree", position: { x: 12, y: 0, z: -13 }, hitRadius: 1.2, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "fence0", kind: "fence", position: { x: -14, y: 0, z: 9 }, hitRadius: 0.75, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "fence1", kind: "fence", position: { x: -11.8, y: 0, z: 9 }, hitRadius: 0.75, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "fence2", kind: "fence", position: { x: -9.6, y: 0, z: 9 }, hitRadius: 0.75, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "fence3", kind: "fence", position: { x: -7.4, y: 0, z: 9 }, hitRadius: 0.75, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "fence4", kind: "fence", position: { x: -5.2, y: 0, z: 9 }, hitRadius: 0.75, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "fence5", kind: "fence", position: { x: -3, y: 0, z: 9 }, hitRadius: 0.75, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "fence6", kind: "fence", position: { x: -0.8, y: 0, z: 9 }, hitRadius: 0.75, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "fence7", kind: "fence", position: { x: 1.4, y: 0, z: 9 }, hitRadius: 0.75, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "fence8", kind: "fence", position: { x: 3.6, y: 0, z: 9 }, hitRadius: 0.75, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "fence9", kind: "fence", position: { x: 5.8, y: 0, z: 9 }, hitRadius: 0.75, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "fence10", kind: "fence", position: { x: 8, y: 0, z: 9 }, hitRadius: 0.75, maxIntegrity: 1, integrity: 1, status: "intact" },
+  { id: "fence11", kind: "fence", position: { x: 10.2, y: 0, z: 9 }, hitRadius: 0.75, maxIntegrity: 1, integrity: 1, status: "intact" }
+];
 
 export function createInitialGameState(options: InitialGameStateOptions = {}): GameState {
   const mode = options.mode ?? "onFoot";
@@ -111,7 +146,8 @@ export function createInitialGameState(options: InitialGameStateOptions = {}): G
       boomAngle: 0.15,
       stickAngle: -0.35,
       bucketAngle: -0.2
-    }
+    },
+    destructibles: DEFAULT_DESTRUCTIBLES.map(cloneDestructible)
   };
 }
 
@@ -213,6 +249,7 @@ function updateExcavator(state: GameState, input: GameInput, dt: number): void {
   );
 
   state.excavator.heading = normalizeAngle(state.excavator.crawlerHeading + state.excavator.upperRotation);
+  updateDestructibles(state, input, direction);
 }
 
 function movementDirection(input: GameInput): { x: number; z: number } {
@@ -240,6 +277,60 @@ function clampToWorld(position: Vec3): Vec3 {
 
 function distanceXZ(a: Vec3, b: Vec3): number {
   return Math.hypot(a.x - b.x, a.z - b.z);
+}
+
+function updateDestructibles(state: GameState, input: GameInput, direction: { x: number; z: number }): void {
+  const bodyActive = direction.x !== 0 || direction.z !== 0;
+  const bucketActive =
+    input.upperLeft ||
+    input.upperRight ||
+    input.boomUp ||
+    input.boomDown ||
+    input.stickIn ||
+    input.stickOut ||
+    input.bucketCurl ||
+    input.bucketDump;
+
+  if (!bodyActive && !bucketActive) {
+    return;
+  }
+
+  const bucketPoint = bucketActive ? computeBucketImpactPoint(state.excavator) : undefined;
+
+  state.destructibles = state.destructibles.map((target) => {
+    if (target.status === "detached") {
+      return target;
+    }
+
+    const bodyHit = bodyActive && distanceXZ(state.excavator.position, target.position) <= BODY_IMPACT_RADIUS + target.hitRadius;
+    const bucketHit = bucketPoint !== undefined && distanceXZ(bucketPoint, target.position) <= BUCKET_IMPACT_RADIUS + target.hitRadius;
+
+    if (!bodyHit && !bucketHit) {
+      return target;
+    }
+
+    return damageDestructible(target);
+  });
+}
+
+function computeBucketImpactPoint(excavator: ExcavatorState): Vec3 {
+  const heading = excavator.crawlerHeading + excavator.upperRotation;
+  const reach = 3.3 + excavator.boomAngle * 0.4 - excavator.stickAngle * 0.25 - excavator.bucketAngle * 0.15;
+
+  return {
+    x: excavator.position.x + Math.sin(heading) * reach,
+    y: 0,
+    z: excavator.position.z - Math.cos(heading) * reach
+  };
+}
+
+function damageDestructible(target: DestructibleState): DestructibleState {
+  const integrity = Math.max(0, target.integrity - 1);
+  return {
+    ...target,
+    integrity,
+    status: integrity === 0 ? "detached" : "damaged"
+  };
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -277,10 +368,18 @@ function cloneState(state: GameState): GameState {
       boomAngle: state.excavator.boomAngle,
       stickAngle: state.excavator.stickAngle,
       bucketAngle: state.excavator.bucketAngle
-    }
+    },
+    destructibles: state.destructibles.map(cloneDestructible)
   };
 }
 
 function cloneVec3(value: Vec3): Vec3 {
   return { x: value.x, y: value.y, z: value.z };
+}
+
+function cloneDestructible(value: DestructibleState): DestructibleState {
+  return {
+    ...value,
+    position: cloneVec3(value.position)
+  };
 }

@@ -232,4 +232,28 @@ describe("farm world", () => {
     expect(proceduralParts.length).toBeGreaterThanOrEqual(70);
     expect(countLegoStuds(world.scene)).toBeGreaterThanOrEqual(40);
   });
+
+  it("REQ-0004-004 builds stable destructible groups for barn, trees, and fences", () => {
+    const world = createFarmWorld();
+
+    expect(world.scene.getObjectByName("destructibleBarn")).toBeDefined();
+    expect(world.scene.getObjectByName("destructibleTree0")).toBeDefined();
+    expect(world.scene.getObjectByName("destructibleFence0")).toBeDefined();
+  });
+
+  it("REQ-0004-004 marks visible LEGO shards for detached destructible feedback", () => {
+    const world = createFarmWorld();
+    const shards: string[] = [];
+
+    world.scene.traverse((object) => {
+      if (object.userData.destructibleShard === true) {
+        shards.push(object.name);
+      }
+    });
+
+    expect(shards.length).toBeGreaterThanOrEqual(10);
+    expect(shards.some((name) => name.startsWith("barnShard"))).toBe(true);
+    expect(shards.some((name) => name.startsWith("treeShard"))).toBe(true);
+    expect(shards.some((name) => name.startsWith("fenceShard"))).toBe(true);
+  });
 });
