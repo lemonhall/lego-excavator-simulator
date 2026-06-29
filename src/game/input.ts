@@ -18,12 +18,12 @@ export class KeyboardInput {
           "KeyD",
           "Space",
           "KeyE",
-          "KeyQ",
-          "KeyR",
+          "KeyU",
+          "KeyO",
           "KeyJ",
           "KeyL",
-          "KeyT",
-          "KeyG",
+          "KeyN",
+          "KeyM",
           "KeyY",
           "KeyH"
         ].includes(event.code)
@@ -45,12 +45,12 @@ export class KeyboardInput {
       right: this.pressed.has("KeyD") || this.pressed.has("ArrowRight"),
       jump: this.pressed.has("Space"),
       interact: this.interactLatch,
-      boomUp: this.pressed.has("KeyR"),
-      boomDown: this.pressed.has("KeyQ"),
+      boomUp: this.pressed.has("KeyU"),
+      boomDown: this.pressed.has("KeyO"),
       upperLeft: this.pressed.has("KeyJ"),
       upperRight: this.pressed.has("KeyL"),
-      stickIn: this.pressed.has("KeyT"),
-      stickOut: this.pressed.has("KeyG"),
+      stickIn: this.pressed.has("KeyN"),
+      stickOut: this.pressed.has("KeyM"),
       bucketCurl: this.pressed.has("KeyY"),
       bucketDump: this.pressed.has("KeyH")
     };

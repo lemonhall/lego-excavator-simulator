@@ -16,21 +16,21 @@ Upgrade the vehicle from a simple block prop into a recognizable LEGO-style trac
   - World tests prove the crawler base is wider than the cab and the boom reach extends in front of the upper structure.
   - The model keeps named runtime handles for lower crawler base, rotating upper, boom, stick, and bucket.
 
-### REQ-0003-002: Tracked Driving And Slew Controls
+### REQ-0003-002: Unified Driving And Slew Controls
 
-- Motivation: Real excavators move on tracks and rotate their upper body independently; simple WASD translation breaks the vehicle fantasy.
-- Scope: Driving mode supports forward/backward travel, differential track turning, lower base heading, and independent upper slew rotation.
+- Motivation: The player should not relearn movement after entering the excavator; driving movement should match on-foot WASD while retaining excavator upper slew controls.
+- Scope: Driving mode supports WASD planar movement, crawler heading follows movement direction, independent upper slew rotation, and 60% body transparency for cab visibility. [Changed by ECN-0005]
 - Non-goals: No soil interaction, slipping, suspension, track animation, or hydraulic latency simulation.
 - Acceptance:
-  - State tests prove `W`/`S` move the excavator along the crawler heading.
-  - State tests prove `A`/`D` rotate the crawler heading while staying near the same position, using differential track logic.
+  - State tests prove `WASD` moves the excavator with the same planar movement contract used by the player. [Changed by ECN-0005]
+  - State tests prove crawler heading updates to match the driving movement direction. [Changed by ECN-0005]
   - State tests prove upper slew rotates independently from crawler heading and wraps/clamps safely through 360-degree motion.
-  - E2E proves the player can enter driving mode and change crawler heading, upper slew, and HUD readout through keyboard input.
+  - E2E proves the player can enter driving mode, use remapped arm controls, see Chinese HUD instructions, and get transparent vehicle-body debug evidence. [Changed by ECN-0005]
 
 ### REQ-0003-003: Articulated Excavator Arm
 
 - Motivation: The boom, stick, and bucket are the recognizable working parts of an excavator.
-- Scope: Add independently controlled boom, stick, and bucket joints with named scene groups and clamped limits.
+- Scope: Add independently controlled boom, stick, and bucket joints with named scene groups and clamped limits. Boom uses `U/O`, stick uses `N/M`, and bucket uses `Y/H`. [Changed by ECN-0005]
 - Non-goals: No inverse kinematics, digging collision, or payload simulation.
 - Acceptance:
   - State tests prove boom, stick, and bucket each move independently and remain inside configured angle limits.

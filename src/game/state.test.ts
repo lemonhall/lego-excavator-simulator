@@ -119,13 +119,14 @@ describe("game state", () => {
     expect(next.excavator.crawlerHeading).toBe(state.excavator.crawlerHeading);
   });
 
-  it("REQ-0003-002 pivots the crawler base in place with differential track steering", () => {
+  it("REQ-0003-002 uses the same WASD planar movement contract while driving", () => {
     const state = createInitialGameState({ mode: "driving" });
 
-    const next = updateGameState(state, { ...idleInput(), left: true }, 1);
+    const next = updateGameState(state, { ...idleInput(), right: true }, 1);
 
-    expect(next.excavator.crawlerHeading).toBeLessThan(state.excavator.crawlerHeading);
-    expect(Math.hypot(next.excavator.position.x - state.excavator.position.x, next.excavator.position.z - state.excavator.position.z)).toBeLessThan(0.25);
+    expect(next.excavator.position.x).toBeGreaterThan(state.excavator.position.x);
+    expect(next.excavator.position.z).toBe(state.excavator.position.z);
+    expect(next.excavator.crawlerHeading).toBeGreaterThan(state.excavator.crawlerHeading);
   });
 
   it("REQ-0003-002 rotates the upper structure independently from the crawler base", () => {

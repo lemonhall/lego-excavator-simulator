@@ -7,8 +7,8 @@ test.describe("lego excavator game", () => {
     const canvas = page.getByTestId("game-canvas");
     await expect(canvas).toBeVisible();
     await expect(page.getByTestId("hud")).toContainText("LEGO EXCAVATOR FARM");
-    await expect(page.getByTestId("mode")).toContainText("ON FOOT");
-    await expect(page.getByTestId("camera-mode")).toContainText("OVER-SHOULDER");
+    await expect(page.getByTestId("mode")).toContainText("步行");
+    await expect(page.getByTestId("camera-mode")).toContainText("第三人称过肩");
 
     const nonBackgroundPixels = await page.evaluate(() => {
       const gameCanvas = document.querySelector<HTMLCanvasElement>('[data-testid="game-canvas"]');
@@ -58,24 +58,24 @@ test.describe("lego excavator game", () => {
     await page.keyboard.up("KeyW");
     await page.keyboard.press("KeyE");
 
-    await expect(page.getByTestId("mode")).toContainText("DRIVING");
-    await expect(page.getByTestId("camera-mode")).toContainText("CAB VIEW");
+    await expect(page.getByTestId("mode")).toContainText("驾驶挖掘机");
+    await expect(page.getByTestId("camera-mode")).toContainText("驾驶室视角");
 
     await page.keyboard.down("KeyW");
     await page.waitForTimeout(250);
     await page.keyboard.up("KeyW");
-    await page.keyboard.down("KeyR");
+    await page.keyboard.down("KeyU");
     await page.waitForTimeout(250);
-    await page.keyboard.up("KeyR");
+    await page.keyboard.up("KeyU");
     await page.keyboard.down("KeyD");
     await page.waitForTimeout(180);
     await page.keyboard.up("KeyD");
     await page.keyboard.down("KeyL");
     await page.waitForTimeout(180);
     await page.keyboard.up("KeyL");
-    await page.keyboard.down("KeyT");
+    await page.keyboard.down("KeyN");
     await page.waitForTimeout(180);
-    await page.keyboard.up("KeyT");
+    await page.keyboard.up("KeyN");
     await page.keyboard.down("KeyY");
     await page.waitForTimeout(180);
     await page.keyboard.up("KeyY");
@@ -85,16 +85,21 @@ test.describe("lego excavator game", () => {
       hasCrawlerBase: true,
       hasUpper: true,
       hasStick: true,
-      hasBucket: true
+      hasBucket: true,
+      transparentBody: true,
+      bodyOpacity: 0.6
     });
     expect(Number(excavatorDebug?.crawlerHeading)).not.toBe(0);
     expect(Number(excavatorDebug?.upperRotation)).not.toBe(0);
+    expect(Number(excavatorDebug?.boomAngle)).not.toBe(0.15);
     expect(Number(excavatorDebug?.stickAngle)).not.toBe(0);
     expect(Number(excavatorDebug?.bucketAngle)).not.toBe(0);
-    await expect(page.getByTestId("hud")).toContainText("J/L slew");
+    await expect(page.getByTestId("hud")).toContainText("WASD 行走/开车");
+    await expect(page.getByTestId("hud")).toContainText("U/O 大臂");
+    await expect(page.getByTestId("hud")).toContainText("N/M 小臂");
     await page.keyboard.press("KeyE");
 
-    await expect(page.getByTestId("mode")).toContainText("ON FOOT");
-    await expect(page.getByTestId("camera-mode")).toContainText("OVER-SHOULDER");
+    await expect(page.getByTestId("mode")).toContainText("步行");
+    await expect(page.getByTestId("camera-mode")).toContainText("第三人称过肩");
   });
 });

@@ -79,7 +79,6 @@ export const BUCKET_LIMITS = {
 
 const PLAYER_SPEED = 5.5;
 const TRACK_SPEED = 3.4;
-const TRACK_TURN_SPEED = 1.9;
 const JUMP_SPEED = 7.5;
 const GRAVITY = -18;
 const BOOM_SPEED = 1.8;
@@ -181,18 +180,13 @@ function updatePlayer(state: GameState, input: GameInput, dt: number): void {
 }
 
 function updateExcavator(state: GameState, input: GameInput, dt: number): void {
-  const drive = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
-  const turn = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-
-  state.excavator.crawlerHeading = normalizeAngle(state.excavator.crawlerHeading + turn * TRACK_TURN_SPEED * dt);
-
-  const forward = {
-    x: Math.sin(state.excavator.crawlerHeading),
-    z: -Math.cos(state.excavator.crawlerHeading)
-  };
-  state.excavator.position.x += forward.x * drive * TRACK_SPEED * dt;
-  state.excavator.position.z += forward.z * drive * TRACK_SPEED * dt;
+  const direction = movementDirection(input);
+  state.excavator.position.x += direction.x * TRACK_SPEED * dt;
+  state.excavator.position.z += direction.z * TRACK_SPEED * dt;
   state.excavator.position = clampToWorld(state.excavator.position);
+  if (direction.x !== 0 || direction.z !== 0) {
+    state.excavator.crawlerHeading = Math.atan2(direction.x, -direction.z);
+  }
 
   const upperDelta = (input.upperRight ? 1 : 0) - (input.upperLeft ? 1 : 0);
   state.excavator.upperRotation = normalizeAngle(state.excavator.upperRotation + upperDelta * UPPER_SLEW_SPEED * dt);

@@ -119,6 +119,8 @@ function syncDebugState(world: FarmWorld, state: GameState): void {
 }
 
 function getExcavatorDebug(world: FarmWorld, state: GameState): Record<string, unknown> {
+  const opacitySample = findExcavatorOpacitySample(world);
+
   return {
     hasCrawlerBase: world.excavatorCrawlerBase.name === "excavatorCrawlerBase",
     hasUpper: world.excavatorUpper.name === "excavatorUpper",
@@ -130,8 +132,20 @@ function getExcavatorDebug(world: FarmWorld, state: GameState): Record<string, u
     stickAngle: state.excavator.stickAngle,
     bucketAngle: state.excavator.bucketAngle,
     crawlerWorldRotation: world.excavatorCrawlerBase.rotation.y,
-    upperWorldRotation: world.excavatorUpper.rotation.y
+    upperWorldRotation: world.excavatorUpper.rotation.y,
+    transparentBody: state.mode === "driving",
+    bodyOpacity: opacitySample
   };
+}
+
+function findExcavatorOpacitySample(world: FarmWorld): number | undefined {
+  let opacity: number | undefined;
+  world.excavatorRoot.traverse((object) => {
+    if (opacity === undefined && object instanceof Mesh && object.material instanceof MeshPhysicalMaterial) {
+      opacity = object.material.opacity;
+    }
+  });
+  return opacity;
 }
 
 function getOfficialRigDebug(world: FarmWorld): Record<string, unknown> {
@@ -268,6 +282,29 @@ function syncWorld(world: FarmWorld, state: GameState): void {
   world.excavatorBoom.rotation.x = state.excavator.boomAngle;
   world.excavatorStick.rotation.x = state.excavator.stickAngle;
   world.excavatorBucket.rotation.x = state.excavator.bucketAngle;
+  syncExcavatorOpacity(world, state);
+}
+
+function syncExcavatorOpacity(world: FarmWorld, state: GameState): void {
+  const transparentBody = state.mode === "driving";
+  const opacity = transparentBody ? 0.6 : 1;
+
+  world.excavatorRoot.traverse((object) => {
+    if (!(object instanceof Mesh) || !(object.material instanceof MeshPhysicalMaterial)) {
+      return;
+    }
+
+    if (object.material.userData.originalOpacity === undefined) {
+      object.material.userData.originalOpacity = object.material.opacity;
+      object.material.userData.originalTransparent = object.material.transparent;
+      object.material.userData.originalDepthWrite = object.material.depthWrite;
+    }
+
+    object.material.opacity = opacity;
+    object.material.transparent = transparentBody || object.material.userData.originalTransparent === true;
+    object.material.depthWrite = transparentBody ? false : object.material.userData.originalDepthWrite !== false;
+    object.material.needsUpdate = true;
+  });
 }
 
 function syncPlayerWalk(world: FarmWorld, state: GameState): void {
@@ -316,12 +353,12 @@ function syncCameraFillLight(world: FarmWorld, camera: PerspectiveCamera, state:
 }
 
 function updateHud(hud: HTMLElement, state: GameState): void {
-  const modeLabel = state.mode === "driving" ? "DRIVING" : "ON FOOT";
-  const cameraLabel = state.mode === "driving" ? "CAB VIEW" : "OVER-SHOULDER";
+  const modeLabel = state.mode === "driving" ? "驾驶挖掘机" : "步行";
+  const cameraLabel = state.mode === "driving" ? "驾驶室视角" : "第三人称过肩";
   hud.innerHTML = `
     <div class="hud-title">LEGO EXCAVATOR FARM</div>
-    <div data-testid="mode">Mode: ${modeLabel}</div>
-    <div data-testid="camera-mode">Camera: ${cameraLabel}</div>
-    <div>WASD move / tracks | Space jump | E enter/exit | Q/R boom | J/L slew | T/G stick | Y/H bucket</div>
+    <div data-testid="mode">状态：${modeLabel}</div>
+    <div data-testid="camera-mode">镜头：${cameraLabel}</div>
+    <div>WASD 行走/开车 | 空格 跳跃 | E 上车/下车 | J/L 上车回转 | U/O 大臂 | N/M 小臂 | Y/H 铲斗</div>
   `;
 }
