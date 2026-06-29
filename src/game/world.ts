@@ -16,6 +16,7 @@ import {
   PointLight,
   Scene,
   SphereGeometry,
+  SpotLight,
   Texture,
   Vector3
 } from "three";
@@ -92,6 +93,13 @@ export function createFarmWorld(): FarmWorld {
   toyFill.name = "plasticHighlightLight";
   toyFill.position.set(-5, 5, 6);
   scene.add(toyFill);
+
+  const cameraFill = new SpotLight("#fff0cf", 38, 8.5, 0.82, 0.78, 1.05);
+  cameraFill.name = "cameraPlasticFillLight";
+  cameraFill.position.set(1.2, 2.2, 3.2);
+  cameraFill.userData.lightRole = "cameraPlasticFill";
+  scene.add(cameraFill);
+  scene.add(cameraFill.target);
 
   const ground = createRoundedPanel("ground", 42, 0.25, 42, plastic.grass);
   ground.position.y = -0.15;

@@ -168,6 +168,7 @@ describe("farm world", () => {
     expect(world.scene.getObjectByName("plasticKeyLight")).toBeDefined();
     expect(world.scene.getObjectByName("plasticHighlightLight")).toBeDefined();
     expect(world.scene.getObjectByName("plasticSkyBounceLight")).toBeDefined();
+    expect(world.scene.getObjectByName("cameraPlasticFillLight")).toBeDefined();
     expect(world.playerRoot.getObjectByName("playerPlasticFillLight")).toBeDefined();
   });
 

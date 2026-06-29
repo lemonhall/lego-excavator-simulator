@@ -45,11 +45,13 @@ export function normalizeOfficialWorkerModel(source: Object3D): Group {
 
   source.traverse((object) => {
     object.castShadow = true;
-    object.receiveShadow = true;
     if (object instanceof Mesh) {
+      object.receiveShadow = false;
       object.material = Array.isArray(object.material)
         ? object.material.map((material) => createScenePlasticMaterial(material))
         : createScenePlasticMaterial(object.material);
+    } else {
+      object.receiveShadow = true;
     }
   });
 
@@ -111,10 +113,11 @@ function createScenePlasticMaterial(material: Material): MeshPhysicalMaterial {
     plastic.normalMap = material.normalMap;
     plastic.roughnessMap = material.roughnessMap;
     plastic.metalnessMap = material.metalnessMap;
-    plastic.emissive.copy(material.emissive);
     plastic.emissiveMap = material.emissiveMap;
-    plastic.emissiveIntensity = material.emissiveIntensity;
   }
+  const emissiveLift = getImportedPlasticEmissiveLift(material);
+  plastic.emissive.copy(baseColor).multiplyScalar(emissiveLift.colorScalar);
+  plastic.emissiveIntensity = emissiveLift.intensity;
 
   plastic.userData = {
     ...material.userData,
@@ -124,7 +127,19 @@ function createScenePlasticMaterial(material: Material): MeshPhysicalMaterial {
   return plastic;
 }
 
+function getImportedPlasticEmissiveLift(material: Material): { colorScalar: number; intensity: number } {
+  if (material.name === "SOLID-YELLOW") {
+    return { colorScalar: 0.34, intensity: 0.92 };
+  }
+
+  return { colorScalar: 0.18, intensity: 0.55 };
+}
+
 function getMaterialColor(material: Material): Color {
+  if (material.name === "SOLID-YELLOW") {
+    return new Color("#ffd21f");
+  }
+
   if (material instanceof MeshStandardMaterial || material instanceof MeshPhysicalMaterial) {
     return material.color.clone();
   }
