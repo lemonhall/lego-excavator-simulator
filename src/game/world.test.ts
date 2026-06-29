@@ -105,6 +105,16 @@ describe("farm world", () => {
     expect(torso?.userData.shoulderWidth).toBeGreaterThan(torso?.userData.waistWidth);
   });
 
+  it("REQ-0002-004 exposes official glTF animation targets and glossy material metadata", () => {
+    const world = createFarmWorld();
+    const mount = world.playerRoot.getObjectByName("officialWorkerModelMount");
+
+    expect(mount?.userData.animationTargets).toEqual(["playerLeftArm", "playerRightArm", "playerLeftLeg", "playerRightLeg"]);
+    expect(mount?.userData.animationTargetMode).toBe("jointPivotGroups");
+    expect(mount?.userData.materialTreatment).toBe("scenePhysicalPlastic");
+    expect(mount?.userData.forwardCorrection).toBe(0);
+  });
+
   it("REQ-0002-004 decomposes official worker reference parts into decals and molded details", () => {
     const world = createFarmWorld();
 

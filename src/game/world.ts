@@ -133,6 +133,10 @@ function createPlayer(): Group {
   const modelMount = new Group();
   modelMount.name = "officialWorkerModelMount";
   modelMount.visible = false;
+  modelMount.userData.animationTargets = ["playerLeftArm", "playerRightArm", "playerLeftLeg", "playerRightLeg"];
+  modelMount.userData.animationTargetMode = "jointPivotGroups";
+  modelMount.userData.materialTreatment = "scenePhysicalPlastic";
+  modelMount.userData.forwardCorrection = 0;
   root.add(modelMount);
 
   const fallback = new Group();

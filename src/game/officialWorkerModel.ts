@@ -1,8 +1,17 @@
-import { Box3, Group, Mesh, MeshPhysicalMaterial, Object3D, Vector3 } from "three";
+import { Box3, Color, Group, Material, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, Object3D, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import type { FarmWorld } from "./world";
 
 export const OFFICIAL_WORKER_MODEL_PATH = "/models/lego_construction_worker/scene.gltf";
+
+type LimbSide = "left" | "right";
+type LimbKind = "arm" | "leg" | "hand";
+
+interface ClassifiedPart {
+  object: Object3D;
+  side: LimbSide;
+  kind: LimbKind;
+}
 
 export async function loadOfficialWorkerModel(world: FarmWorld): Promise<Group> {
   const loader = new GLTFLoader();
@@ -28,7 +37,7 @@ export async function loadOfficialWorkerModel(world: FarmWorld): Promise<Group> 
   return model;
 }
 
-function normalizeOfficialWorkerModel(source: Object3D): Group {
+export function normalizeOfficialWorkerModel(source: Object3D): Group {
   const model = new Group();
   model.name = "officialWorkerGltfModel";
   model.userData.source = "sketchfab-uzzi47-cc-by-4";
@@ -38,15 +47,9 @@ function normalizeOfficialWorkerModel(source: Object3D): Group {
     object.castShadow = true;
     object.receiveShadow = true;
     if (object instanceof Mesh) {
-      const materials = Array.isArray(object.material) ? object.material : [object.material];
-      materials.forEach((material) => {
-        if (material instanceof MeshPhysicalMaterial) {
-          material.clearcoat = 0.82;
-          material.clearcoatRoughness = 0.12;
-          material.roughness = Math.min(material.roughness, 0.34);
-          material.color.multiplyScalar(1.12);
-        }
-      });
+      object.material = Array.isArray(object.material)
+        ? object.material.map((material) => createScenePlasticMaterial(material))
+        : createScenePlasticMaterial(object.material);
     }
   });
 
@@ -58,7 +61,7 @@ function normalizeOfficialWorkerModel(source: Object3D): Group {
   const scale = targetHeight / Math.max(size.y, 1);
   source.scale.setScalar(scale);
 
-  source.rotation.y = Math.PI;
+  source.rotation.y = 0;
 
   const scaledBounds = new Box3().setFromObject(model);
   const scaledCenter = new Vector3();
@@ -72,6 +75,9 @@ function normalizeOfficialWorkerModel(source: Object3D): Group {
   const finalCenter = new Vector3();
   finalBounds.getSize(finalSize);
   finalBounds.getCenter(finalCenter);
+
+  createOfficialWorkerPivotRig(model, source);
+
   model.userData.bounds = {
     min: finalBounds.min.toArray(),
     max: finalBounds.max.toArray(),
@@ -80,4 +86,207 @@ function normalizeOfficialWorkerModel(source: Object3D): Group {
   };
 
   return model;
+}
+
+function createScenePlasticMaterial(material: Material): MeshPhysicalMaterial {
+  const baseColor = getMaterialColor(material);
+  const plastic = new MeshPhysicalMaterial({
+    color: baseColor,
+    roughness: 0.26,
+    metalness: 0.02,
+    clearcoat: 0.72,
+    clearcoatRoughness: 0.18,
+    envMapIntensity: 1.9,
+    transparent: material.transparent,
+    opacity: material.opacity,
+    side: material.side,
+    alphaTest: material.alphaTest,
+    depthWrite: material.depthWrite,
+    depthTest: material.depthTest,
+    name: material.name
+  });
+
+  if (material instanceof MeshStandardMaterial) {
+    plastic.map = material.map;
+    plastic.normalMap = material.normalMap;
+    plastic.roughnessMap = material.roughnessMap;
+    plastic.metalnessMap = material.metalnessMap;
+    plastic.emissive.copy(material.emissive);
+    plastic.emissiveMap = material.emissiveMap;
+    plastic.emissiveIntensity = material.emissiveIntensity;
+  }
+
+  plastic.userData = {
+    ...material.userData,
+    materialKind: "legoPlastic",
+    materialTreatment: "scenePhysicalPlastic"
+  };
+  return plastic;
+}
+
+function getMaterialColor(material: Material): Color {
+  if (material instanceof MeshStandardMaterial || material instanceof MeshPhysicalMaterial) {
+    return material.color.clone();
+  }
+  return new Color("#ffffff");
+}
+
+function createOfficialWorkerPivotRig(model: Group, source: Object3D): void {
+  const parts = classifyOfficialWorkerParts(source);
+  const root = findCommonParent(parts.map((part) => part.object)) ?? source;
+  const arms = parts.filter((part) => part.kind === "arm");
+  const hands = parts.filter((part) => part.kind === "hand");
+  const legs = parts.filter((part) => part.kind === "leg");
+
+  for (const side of ["left", "right"] as const) {
+    const arm = findPart(arms, side);
+    if (arm) {
+      const hand = findNearestPart(hands, arm, side);
+      const pivot = createLimbPivot(`player${capitalizeSide(side)}Arm`, "shoulder", [arm, hand].filter(isClassifiedPart), root);
+      model.userData[`${side}ArmPivot`] = pivot.position.toArray();
+    }
+
+    const leg = findPart(legs, side);
+    if (leg) {
+      const pivot = createLimbPivot(`player${capitalizeSide(side)}Leg`, "hip", [leg], root);
+      model.userData[`${side}LegPivot`] = pivot.position.toArray();
+    }
+  }
+}
+
+function classifyOfficialWorkerParts(source: Object3D): ClassifiedPart[] {
+  const candidates: Object3D[] = [];
+  source.traverse((object) => {
+    if (["3818_dot_dat", "3819_dot_dat", "3820_dot_dat", "3816_dot_dat", "3817_dot_dat"].includes(object.name)) {
+      candidates.push(object);
+    }
+  });
+
+  return candidates.map((object) => ({
+    object,
+    side: getObjectCenter(object).x < getModelCenterX(source) ? "left" : "right",
+    kind: getPartKind(object.name)
+  }));
+}
+
+function getPartKind(name: string): LimbKind {
+  if (name === "3818_dot_dat" || name === "3819_dot_dat") {
+    return "arm";
+  }
+  if (name === "3820_dot_dat") {
+    return "hand";
+  }
+  return "leg";
+}
+
+function getModelCenterX(source: Object3D): number {
+  const bounds = new Box3().setFromObject(source);
+  const center = new Vector3();
+  bounds.getCenter(center);
+  return center.x;
+}
+
+function createLimbPivot(name: string, pivotKind: "shoulder" | "hip", parts: ClassifiedPart[], root: Object3D): Group {
+  const pivot = new Group();
+  pivot.name = name;
+  pivot.userData.animationPivot = pivotKind;
+  pivot.userData.officialRig = "jointPivotGroup";
+  root.updateWorldMatrix(true, false);
+  pivot.position.copy(root.worldToLocal(getPivotPosition(parts, pivotKind)));
+  root.add(pivot);
+
+  for (const part of parts) {
+    part.object.name = part.kind === "hand" ? `player${capitalizeSide(part.side)}Hand` : `${name}Part`;
+    part.object.userData.officialPart = `${part.side}${capitalizeKind(part.kind)}`;
+    pivot.attach(part.object);
+  }
+
+  return pivot;
+}
+
+function getPivotPosition(parts: ClassifiedPart[], pivotKind: "shoulder" | "hip"): Vector3 {
+  const bounds = new Box3();
+  for (const part of parts) {
+    if (part.kind !== "hand") {
+      bounds.union(new Box3().setFromObject(part.object));
+    }
+  }
+
+  if (bounds.isEmpty()) {
+    return new Vector3();
+  }
+
+  const center = new Vector3();
+  bounds.getCenter(center);
+  center.y = bounds.max.y;
+
+  if (pivotKind === "shoulder") {
+    center.x = center.x < 0 ? bounds.max.x : bounds.min.x;
+  }
+
+  return center;
+}
+
+function findCommonParent(objects: Object3D[]): Object3D | undefined {
+  const [first] = objects;
+  if (!first.parent) {
+    return undefined;
+  }
+
+  let parent: Object3D | null = first.parent;
+  while (parent) {
+    const candidate: Object3D = parent;
+    if (objects.every((object) => isDescendantOf(object, candidate))) {
+      return candidate;
+    }
+    parent = candidate.parent;
+  }
+
+  return first.parent;
+}
+
+function isDescendantOf(object: Object3D, parent: Object3D): boolean {
+  let current: Object3D | null = object;
+  while (current) {
+    if (current === parent) {
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
+function findPart(parts: ClassifiedPart[], side: LimbSide): ClassifiedPart | undefined {
+  return parts.find((part) => part.side === side);
+}
+
+function findNearestPart(parts: ClassifiedPart[], target: ClassifiedPart, fallbackSide: LimbSide): ClassifiedPart | undefined {
+  const targetCenter = getObjectCenter(target.object);
+  const sameSide = parts.filter((part) => part.side === fallbackSide);
+  return sameSide.sort((a, b) => targetCenter.distanceTo(getObjectCenter(a.object)) - targetCenter.distanceTo(getObjectCenter(b.object)))[0];
+}
+
+function getObjectCenter(object: Object3D): Vector3 {
+  const bounds = new Box3().setFromObject(object);
+  const center = new Vector3();
+  bounds.getCenter(center);
+  return center;
+}
+
+function isClassifiedPart(part: ClassifiedPart | undefined): part is ClassifiedPart {
+  return part !== undefined;
+}
+
+function capitalizeSide(side: LimbSide): "Left" | "Right" {
+  return side === "left" ? "Left" : "Right";
+}
+
+function capitalizeKind(kind: LimbKind): "Arm" | "Leg" | "Hand" {
+  if (kind === "arm") {
+    return "Arm";
+  }
+  if (kind === "leg") {
+    return "Leg";
+  }
+  return "Hand";
 }

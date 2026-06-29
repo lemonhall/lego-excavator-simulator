@@ -1,5 +1,7 @@
 import {
   ACESFilmicToneMapping,
+  Mesh,
+  MeshPhysicalMaterial,
   PCFSoftShadowMap,
   PerspectiveCamera,
   WebGLRenderer
@@ -20,6 +22,8 @@ declare global {
       officialModelLoaded: boolean;
       officialModelBounds?: unknown;
       fallbackVisible?: boolean;
+      limbRotations?: Record<string, number | undefined>;
+      officialRig?: Record<string, unknown>;
     };
   }
 }
@@ -96,7 +100,31 @@ function syncDebugState(world: FarmWorld): void {
   window.__legoGameDebug = {
     officialModelLoaded: world.playerRoot.userData.loadedOfficialWorkerModel === true,
     officialModelBounds: world.playerRoot.userData.officialModelBounds,
-    fallbackVisible: world.playerRoot.getObjectByName("playerProceduralFallback")?.visible
+    fallbackVisible: world.playerRoot.getObjectByName("playerProceduralFallback")?.visible,
+    limbRotations: {
+      leftArm: world.playerRoot.getObjectByName("playerLeftArm")?.rotation.x,
+      rightArm: world.playerRoot.getObjectByName("playerRightArm")?.rotation.x,
+      leftLeg: world.playerRoot.getObjectByName("playerLeftLeg")?.rotation.x,
+      rightLeg: world.playerRoot.getObjectByName("playerRightLeg")?.rotation.x
+    },
+    officialRig: getOfficialRigDebug(world)
+  };
+}
+
+function getOfficialRigDebug(world: FarmWorld): Record<string, unknown> {
+  let plasticMeshCount = 0;
+  world.playerRoot.traverse((object) => {
+    if (object instanceof Mesh && object.material instanceof MeshPhysicalMaterial && object.material.userData.materialKind === "legoPlastic") {
+      plasticMeshCount += 1;
+    }
+  });
+
+  return {
+    leftHandParent: world.playerRoot.getObjectByName("playerLeftHand")?.parent?.name,
+    rightHandParent: world.playerRoot.getObjectByName("playerRightHand")?.parent?.name,
+    leftArmPivot: world.playerRoot.getObjectByName("playerLeftArm")?.userData.animationPivot,
+    rightArmPivot: world.playerRoot.getObjectByName("playerRightArm")?.userData.animationPivot,
+    physicalPlasticMeshes: plasticMeshCount
   };
 }
 
