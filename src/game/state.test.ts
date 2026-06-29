@@ -129,14 +129,16 @@ describe("game state", () => {
     expect(next.excavator.crawlerHeading).toBeGreaterThan(state.excavator.crawlerHeading);
   });
 
-  it("REQ-0003-002 rotates the upper structure independently from the crawler base", () => {
+  it("REQ-0003-002 maps J to left slew and L to right slew", () => {
     const state = createInitialGameState({ mode: "driving" });
 
-    const next = updateGameState(state, { ...idleInput(), upperRight: true }, 1);
+    const left = updateGameState(state, { ...idleInput(), upperLeft: true }, 1);
+    const right = updateGameState(state, { ...idleInput(), upperRight: true }, 1);
 
-    expect(next.excavator.upperRotation).toBeGreaterThan(state.excavator.upperRotation);
-    expect(next.excavator.crawlerHeading).toBe(state.excavator.crawlerHeading);
-    expect(next.excavator.heading).toBe(next.excavator.crawlerHeading + next.excavator.upperRotation);
+    expect(left.excavator.upperRotation).toBeGreaterThan(state.excavator.upperRotation);
+    expect(right.excavator.upperRotation).toBeLessThan(state.excavator.upperRotation);
+    expect(left.excavator.crawlerHeading).toBe(state.excavator.crawlerHeading);
+    expect(left.excavator.heading).toBe(left.excavator.crawlerHeading + left.excavator.upperRotation);
   });
 
   it("REQ-0003-003 clamps boom, stick, and bucket angles inside configured limits", () => {

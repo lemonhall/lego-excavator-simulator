@@ -188,7 +188,7 @@ function updateExcavator(state: GameState, input: GameInput, dt: number): void {
     state.excavator.crawlerHeading = Math.atan2(direction.x, -direction.z);
   }
 
-  const upperDelta = (input.upperRight ? 1 : 0) - (input.upperLeft ? 1 : 0);
+  const upperDelta = (input.upperLeft ? 1 : 0) - (input.upperRight ? 1 : 0);
   state.excavator.upperRotation = normalizeAngle(state.excavator.upperRotation + upperDelta * UPPER_SLEW_SPEED * dt);
 
   const boomDelta = (input.boomUp ? 1 : 0) - (input.boomDown ? 1 : 0);
