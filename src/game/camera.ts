@@ -37,8 +37,8 @@ function computeOverShoulderRig(state: GameState): CameraRig {
 function computeDriverCabRig(state: GameState): CameraRig {
   const excavator = state.excavator.position;
   const heading = getDriverHeading(state);
-  const forward = { x: Math.sin(heading), z: -Math.cos(heading) };
-  const right = { x: Math.cos(heading), z: Math.sin(heading) };
+  const forward = { x: -Math.sin(heading), z: -Math.cos(heading) };
+  const right = { x: Math.cos(heading), z: -Math.sin(heading) };
 
   return {
     mode: "driverCab",

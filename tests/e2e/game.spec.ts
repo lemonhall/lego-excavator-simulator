@@ -87,7 +87,7 @@ test.describe("lego excavator game", () => {
       hasStick: true,
       hasBucket: true,
       transparentBody: true,
-      bodyOpacity: 0.6
+      bodyOpacity: 0.3
     });
     expect(Number(excavatorDebug?.crawlerHeading)).not.toBe(0);
     expect(Number(excavatorDebug?.upperRotation)).not.toBe(0);

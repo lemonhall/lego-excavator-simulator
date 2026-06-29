@@ -287,7 +287,7 @@ function syncWorld(world: FarmWorld, state: GameState): void {
 
 function syncExcavatorOpacity(world: FarmWorld, state: GameState): void {
   const transparentBody = state.mode === "driving";
-  const opacity = transparentBody ? 0.6 : 1;
+  const opacity = transparentBody ? 0.3 : 1;
 
   world.excavatorRoot.traverse((object) => {
     if (!(object instanceof Mesh) || !(object.material instanceof MeshPhysicalMaterial)) {

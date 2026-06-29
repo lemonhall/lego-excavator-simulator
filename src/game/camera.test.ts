@@ -32,7 +32,7 @@ describe("camera rig", () => {
     expect(Math.abs(rig.position.x - state.excavator.position.x)).toBeLessThan(2.3);
     expect(rig.position.y).toBeGreaterThan(2.2);
     expect(rig.position.y).toBeLessThan(2.9);
-    expect(rig.target.x).toBeGreaterThan(rig.position.x);
+    expect(Math.abs(rig.target.x - rig.position.x)).toBeGreaterThan(2.4);
     expect(rig.lerp).toBeGreaterThanOrEqual(0.3);
   });
 
@@ -50,5 +50,19 @@ describe("camera rig", () => {
     expect(rig.target.z).toBeLessThan(state.excavator.position.z);
     expect(rig.position.y - rig.target.y).toBeGreaterThan(1);
     expect(rig.position.x).toBeLessThan(state.excavator.position.x);
+  });
+
+  it("REQ-0003-002 follows upper slew direction instead of mirroring it", () => {
+    const state = createInitialGameState({
+      mode: "driving",
+      excavatorPosition: { x: 3, y: 0, z: -3 }
+    });
+    state.excavator.upperRotation = Math.PI / 4;
+
+    const rig = computeCameraRig(state);
+
+    expect(rig.mode).toBe("driverCab");
+    expect(rig.target.x).toBeLessThan(state.excavator.position.x);
+    expect(rig.position.x).toBeGreaterThan(state.excavator.position.x);
   });
 });
