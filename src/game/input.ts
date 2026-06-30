@@ -3,12 +3,16 @@ import type { GameInput } from "./state";
 export class KeyboardInput {
   private readonly pressed = new Set<string>();
   private interactLatch = false;
+  private modelBrowserLatch = false;
 
   constructor(target: Window) {
     target.addEventListener("keydown", (event) => {
       this.pressed.add(event.code);
       if (event.code === "KeyE") {
         this.interactLatch = true;
+      }
+      if (event.code === "KeyB") {
+        this.modelBrowserLatch = true;
       }
       if (
         [
@@ -25,7 +29,8 @@ export class KeyboardInput {
           "KeyN",
           "KeyM",
           "KeyY",
-          "KeyH"
+          "KeyH",
+          "KeyB"
         ].includes(event.code)
       ) {
         event.preventDefault();
@@ -52,10 +57,12 @@ export class KeyboardInput {
       stickIn: this.pressed.has("KeyN"),
       stickOut: this.pressed.has("KeyM"),
       bucketCurl: this.pressed.has("KeyY"),
-      bucketDump: this.pressed.has("KeyH")
+      bucketDump: this.pressed.has("KeyH"),
+      toggleModelBrowser: this.modelBrowserLatch
     };
 
     this.interactLatch = false;
+    this.modelBrowserLatch = false;
     return input;
   }
 }

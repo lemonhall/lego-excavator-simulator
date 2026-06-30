@@ -21,6 +21,7 @@ export interface GameInput {
   stickOut: boolean;
   bucketCurl: boolean;
   bucketDump: boolean;
+  toggleModelBrowser: boolean;
 }
 
 export interface PlayerState {

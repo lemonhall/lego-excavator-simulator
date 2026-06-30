@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 2,
+  "models": [
+    {
+      "id": "mini-construction",
+      "name": "Mini Construction",
+      "category": "Vehicle",
+      "sourceKind": "ldraw-packed",
+      "format": "ldraw",
+      "file": "/community-models/ldraw/4915-1-MiniConstruction.mpd_Packed.mpd",
+      "sourceUrl": "https://github.com/mrdoob/three.js/blob/dev/examples/models/ldraw/officialLibrary/models/4915-1-MiniConstruction.mpd_Packed.mpd",
+      "license": "Three.js MIT; embedded LDraw parts under their declared LDraw/CCAL terms",
+      "attribution": "three.js examples and LDraw.org contributors",
+      "recommendedScale": 0.012,
+      "thumbnailColor": "#facc15"
+    },
+    {
+      "id": "lighthouse",
+      "name": "Lighthouse",
+      "category": "Building",
+      "sourceKind": "ldraw-packed",
+      "format": "ldraw",
+      "file": "/community-models/ldraw/30023-1-Lighthouse.ldr_Packed.mpd",
+      "sourceUrl": "https://github.com/mrdoob/three.js/blob/dev/examples/models/ldraw/officialLibrary/models/30023-1-Lighthouse.ldr_Packed.mpd",
+      "license": "Three.js MIT; embedded LDraw parts under their declared LDraw/CCAL terms",
+      "attribution": "three.js examples and LDraw.org contributors",
+      "recommendedScale": 0.012,
+      "thumbnailColor": "#ef4444"
+    },
+    {
+      "id": "radar-truck",
+      "name": "Radar Truck",
+      "category": "Vehicle",
+      "sourceKind": "ldraw-packed",
+      "format": "ldraw",
+      "file": "/community-models/ldraw/889-1-RadarTruck.mpd_Packed.mpd",
+      "sourceUrl": "https://github.com/mrdoob/three.js/blob/dev/examples/models/ldraw/officialLibrary/models/889-1-RadarTruck.mpd_Packed.mpd",
+      "license": "Three.js MIT; embedded LDraw parts under their declared LDraw/CCAL terms",
+      "attribution": "three.js examples and LDraw.org contributors",
+      "recommendedScale": 0.012,
+      "thumbnailColor": "#38bdf8"
+    }
+  ]
+}

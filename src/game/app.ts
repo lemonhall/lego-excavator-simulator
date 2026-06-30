@@ -1,6 +1,7 @@
 import {
   ACESFilmicToneMapping,
   Box3,
+  Group,
   Mesh,
   MeshPhysicalMaterial,
   Object3D,
@@ -13,6 +14,16 @@ import {
 } from "three";
 import { deriveSoundState, GameAudioController } from "./audio";
 import { computeCameraRig } from "./camera";
+import {
+  collectCommunityModelParts,
+  loadCommunityModelCatalog,
+  loadLDrawCommunityModel,
+  resetCommunityPartToBase,
+  validateCommunityModelCatalog,
+  type CommunityModelCatalog,
+  type CommunityModelInstance,
+  type CommunityModelManifestEntry
+} from "./communityModels";
 import { KeyboardInput } from "./input";
 import { loadOfficialWorkerModel } from "./officialWorkerModel";
 import { createPhysicsWorldController, type PhysicsBodyHandle, type PhysicsWorldController } from "./physics";
@@ -35,6 +46,7 @@ declare global {
       destructibles?: Record<string, unknown>;
       physics?: unknown;
       audio?: Record<string, unknown>;
+      communityModels?: Record<string, unknown>;
       teleport?: (options: DebugTeleportOptions) => void;
     };
   }
@@ -58,6 +70,8 @@ const fallbackPhysicsDebug = {
   kinematicColliderCount: 0
 } as const;
 const physicsRegisteredWorlds = new WeakSet<FarmWorld>();
+const communityPhysicsBodies = new WeakMap<Object3D, PhysicsBodyHandle>();
+const communityImpulseStatuses = new WeakMap<Object3D, CommunityModelInstance["status"]>();
 
 export function mountGameApp(root: HTMLElement): GameApp {
   root.innerHTML = "";
@@ -69,6 +83,12 @@ export function mountGameApp(root: HTMLElement): GameApp {
   hud.className = "hud";
   hud.dataset.testid = "hud";
   wrapper.appendChild(hud);
+
+  const modelPanel = document.createElement("aside");
+  modelPanel.className = "model-panel";
+  modelPanel.dataset.testid = "community-model-panel";
+  modelPanel.hidden = true;
+  wrapper.appendChild(modelPanel);
 
   const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -93,6 +113,7 @@ export function mountGameApp(root: HTMLElement): GameApp {
     .then((controller) => {
       physics = controller;
       registerPhysicsAssemblies(world, controller);
+      communityInstances.forEach((instance) => registerCommunityModelPhysics(instance, controller));
     })
     .catch((error: unknown) => {
       console.warn("Failed to initialize Rapier physics; using visual fallback shards.", error);
@@ -102,6 +123,11 @@ export function mountGameApp(root: HTMLElement): GameApp {
   let animationFrame = 0;
   let disposed = false;
   let audioUnlockRequested = false;
+  let modelBrowserOpen = false;
+  let communityCatalog: CommunityModelCatalog | undefined;
+  const communityInstances: CommunityModelInstance[] = [];
+  let nextCommunityInstanceId = 0;
+  let modelPanelMessage = "正在加载 LDraw 模型库...";
 
   const onResize = () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -118,6 +144,43 @@ export function mountGameApp(root: HTMLElement): GameApp {
   };
   window.addEventListener("keydown", unlockAudio);
   window.addEventListener("pointerdown", unlockAudio);
+  void loadCommunityModelCatalog()
+    .then((catalog) => {
+      const validation = validateCommunityModelCatalog(catalog);
+      if (!validation.valid) {
+        throw new Error(validation.errors.join("\n"));
+      }
+      communityCatalog = catalog;
+      modelPanelMessage = "";
+      renderModelPanel(modelPanel, modelBrowserOpen, communityCatalog, modelPanelMessage, spawnCommunityModel);
+    })
+    .catch((error: unknown) => {
+      console.warn("Failed to load community LDraw catalog.", error);
+      modelPanelMessage = "LDraw 模型库加载失败";
+      renderModelPanel(modelPanel, modelBrowserOpen, communityCatalog, modelPanelMessage, spawnCommunityModel);
+    });
+
+  const spawnCommunityModel = (model: CommunityModelManifestEntry) => {
+    const instanceId = `community${nextCommunityInstanceId}`;
+    nextCommunityInstanceId += 1;
+    modelPanelMessage = `正在加载：${model.name}`;
+    renderModelPanel(modelPanel, modelBrowserOpen, communityCatalog, modelPanelMessage, spawnCommunityModel);
+
+    void loadLDrawCommunityModel(model, instanceId)
+      .then((instance) => {
+        positionCommunityInstance(instance.root, communityInstances.length);
+        world.scene.add(instance.root);
+        communityInstances.push(instance);
+        registerCommunityModelPhysics(instance, physics);
+        modelPanelMessage = `已放置：${model.name}`;
+        renderModelPanel(modelPanel, modelBrowserOpen, communityCatalog, modelPanelMessage, spawnCommunityModel);
+      })
+      .catch((error: unknown) => {
+        console.warn("Failed to spawn community LDraw model.", error);
+        modelPanelMessage = `加载失败：${model.name}`;
+        renderModelPanel(modelPanel, modelBrowserOpen, communityCatalog, modelPanelMessage, spawnCommunityModel);
+      });
+  };
 
   const tick = () => {
     if (disposed) {
@@ -125,10 +188,16 @@ export function mountGameApp(root: HTMLElement): GameApp {
     }
 
     previousState = state;
-    state = updateGameState(state, input.snapshot(), FIXED_DT);
+    const inputState = input.snapshot();
+    if (inputState.toggleModelBrowser) {
+      modelBrowserOpen = !modelBrowserOpen;
+      renderModelPanel(modelPanel, modelBrowserOpen, communityCatalog, modelPanelMessage, spawnCommunityModel);
+    }
+    state = updateGameState(state, inputState, FIXED_DT);
     audio.update(deriveSoundState(previousState, state));
-    syncWorld(world, state, physics);
-    syncDebugState(world, state, audio, physics, (options) => {
+    syncWorld(world, state, physics, communityInstances);
+    syncCommunityModels(communityInstances, state, physics);
+    syncDebugState(world, state, audio, physics, communityInstances, (options) => {
       if (options.mode) {
         state.mode = options.mode;
         state.player.visible = options.mode === "onFoot";
@@ -165,6 +234,7 @@ function syncDebugState(
   state: GameState,
   audio: GameAudioController,
   physics: PhysicsWorldController | undefined,
+  communityInstances: CommunityModelInstance[],
   teleport: (options: DebugTeleportOptions) => void
 ): void {
   window.__legoGameDebug = {
@@ -173,6 +243,7 @@ function syncDebugState(
     fallbackVisible: world.playerRoot.getObjectByName("playerProceduralFallback")?.visible,
     excavator: getExcavatorDebug(world, state),
     destructibles: getDestructibleDebug(world, state),
+    communityModels: getCommunityModelsDebug(communityInstances),
     physics: physics?.getDebugState() ?? fallbackPhysicsDebug,
     limbRotations: {
       leftArm: world.playerRoot.getObjectByName("playerLeftArm")?.rotation.x,
@@ -337,7 +408,12 @@ function getCenterArray(object: Object3D): number[] {
   return center.toArray();
 }
 
-function syncWorld(world: FarmWorld, state: GameState, physics: PhysicsWorldController | undefined): void {
+function syncWorld(
+  world: FarmWorld,
+  state: GameState,
+  physics: PhysicsWorldController | undefined,
+  communityInstances: CommunityModelInstance[]
+): void {
   world.playerRoot.visible = state.player.visible;
   world.playerRoot.position.set(state.player.position.x, state.player.position.y, state.player.position.z);
   world.playerRoot.rotation.y = state.player.facing;
@@ -353,6 +429,7 @@ function syncWorld(world: FarmWorld, state: GameState, physics: PhysicsWorldCont
   syncExcavatorOpacity(world, state);
   syncPhysics(world, state, physics);
   syncDestructibles(world, state, physics);
+  updateCommunityModelImpactState(communityInstances, state);
   physics?.step(FIXED_DT);
 }
 
@@ -528,6 +605,238 @@ function syncPhysicsPart(object: Object3D, target: DestructibleState, physics: P
   object.quaternion.copy(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w));
 }
 
+function renderModelPanel(
+  panel: HTMLElement,
+  open: boolean,
+  catalog: CommunityModelCatalog | undefined,
+  message: string,
+  spawnCommunityModel: (model: CommunityModelManifestEntry) => void
+): void {
+  panel.hidden = !open;
+  if (!open) {
+    return;
+  }
+
+  const models = catalog?.models ?? [];
+  panel.innerHTML = `
+    <div class="model-panel-header">
+      <div>
+        <div class="model-panel-title">LDraw 模型库</div>
+        <div class="model-panel-subtitle">砖块级 .ldr / .mpd</div>
+      </div>
+      <div class="model-panel-count">${models.length}</div>
+    </div>
+    ${message ? `<div class="model-panel-message">${message}</div>` : ""}
+    <div class="model-panel-list">
+      ${models
+        .map(
+          (model) => `
+            <article class="model-card" data-testid="community-model-card">
+              <div class="model-swatch" style="--swatch: ${model.thumbnailColor}"></div>
+              <div class="model-card-main">
+                <div class="model-card-title">${model.name}</div>
+                <div class="model-card-meta">${model.category} | ${model.sourceKind}</div>
+                <div class="model-card-license">许可证：${model.license}</div>
+                <button class="model-card-button" data-model-id="${model.id}" data-testid="spawn-community-model-${model.id}">放置</button>
+              </div>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+
+  panel.querySelectorAll<HTMLButtonElement>("[data-model-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const model = models.find((entry) => entry.id === button.dataset.modelId);
+      if (model) {
+        spawnCommunityModel(model);
+      }
+    });
+  });
+}
+
+function positionCommunityInstance(root: Group, index: number): void {
+  root.position.set(6.6 + (index % 2) * 2.2, 0, -3.2 - Math.floor(index / 2) * 2.2);
+  root.rotation.y = index % 2 === 0 ? 0 : Math.PI * 0.15;
+}
+
+function updateCommunityModelImpactState(communityInstances: CommunityModelInstance[], state: GameState): void {
+  if (state.mode !== "driving") {
+    return;
+  }
+
+  communityInstances.forEach((instance) => {
+    if (instance.status === "detached") {
+      return;
+    }
+    const hitRadius = getCommunityModelHitRadius(instance.root);
+    const distance = Math.hypot(
+      state.excavator.position.x - instance.root.position.x,
+      state.excavator.position.z - instance.root.position.z
+    );
+    if (distance <= hitRadius + 1.35) {
+      instance.status = "detached";
+      instance.root.userData.communityModelStatus = "detached";
+    }
+  });
+}
+
+function syncCommunityModels(
+  communityInstances: CommunityModelInstance[],
+  state: GameState,
+  physics: PhysicsWorldController | undefined
+): void {
+  communityInstances.forEach((instance) => {
+    if (instance.status === "intact") {
+      instance.parts.forEach(resetCommunityPartToBase);
+      return;
+    }
+
+    instance.parts.forEach((part) => {
+      if (physics && communityPhysicsBodies.has(part)) {
+        syncCommunityPhysicsPart(part, instance, state, physics);
+        return;
+      }
+
+      const hash = stableNameHash(part.name);
+      part.position.x += Math.sin(hash) * 0.018;
+      part.position.y += 0.004 + (hash % 3) * 0.001;
+      part.position.z += Math.cos(hash * 1.3) * 0.018;
+      part.rotation.x += 0.025;
+      part.rotation.z += 0.018;
+    });
+  });
+}
+
+function syncCommunityPhysicsPart(
+  object: Object3D,
+  instance: CommunityModelInstance,
+  state: GameState,
+  physics: PhysicsWorldController
+): void {
+  const body = communityPhysicsBodies.get(object);
+  if (!body) {
+    return;
+  }
+
+  const previousImpulseStatus = communityImpulseStatuses.get(object);
+  if (instance.status === "detached" && previousImpulseStatus !== "detached") {
+    const worldPosition = object.getWorldPosition(new Vector3());
+    const worldQuaternion = object.getWorldQuaternion(new Quaternion());
+    physics.setPartTransform(
+      object.name,
+      { x: worldPosition.x, y: worldPosition.y, z: worldPosition.z },
+      { x: worldQuaternion.x, y: worldQuaternion.y, z: worldQuaternion.z, w: worldQuaternion.w }
+    );
+    const hash = stableNameHash(object.name);
+    const direction = new Vector3(
+      worldPosition.x - state.excavator.position.x,
+      0.25,
+      worldPosition.z - state.excavator.position.z
+    );
+    if (direction.lengthSq() < 0.01) {
+      direction.set(Math.sin(hash), 0.25, Math.cos(hash));
+    }
+    direction.normalize();
+    physics.applyPartImpulse(object.name, {
+      x: direction.x * 1.6,
+      y: 0.22 + (hash % 4) * 0.03,
+      z: direction.z * 1.6
+    });
+  }
+  communityImpulseStatuses.set(object, instance.status);
+
+  const translation = body.translation();
+  const rotation = body.rotation();
+  const local = object.parent?.worldToLocal(new Vector3(translation.x, translation.y, translation.z));
+  if (local) {
+    object.position.copy(local);
+  }
+  object.quaternion.copy(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w));
+}
+
+function registerCommunityModelPhysics(
+  instance: CommunityModelInstance,
+  physics: PhysicsWorldController | undefined
+): void {
+  if (!physics) {
+    return;
+  }
+
+  const rootPosition = instance.root.getWorldPosition(new Vector3());
+  const anchorId = `${instance.id}Anchor`;
+  physics.addAssemblyPart({
+    id: anchorId,
+    locked: true,
+    position: { x: rootPosition.x, y: 0.6, z: rootPosition.z },
+    halfExtents: { x: 0.08, y: 0.08, z: 0.08 }
+  });
+
+  const parts = collectCommunityModelParts(instance.root).slice(0, 42);
+  parts.forEach((part, index) => {
+    if (communityPhysicsBodies.has(part)) {
+      return;
+    }
+    const worldPosition = part.getWorldPosition(new Vector3());
+    const body = physics.addAssemblyPart({
+      id: part.name,
+      locked: false,
+      position: { x: worldPosition.x, y: Math.max(0.12, worldPosition.y), z: worldPosition.z },
+      halfExtents: getCommunityPartHalfExtents(part),
+      colliderOffset: getLocalColliderOffset(part)
+    });
+    physics.addBreakableLink({
+      id: `${part.name}Link`,
+      partA: anchorId,
+      partB: part.name,
+      breakDistance: 0.32 + (index % 3) * 0.04
+    });
+    communityPhysicsBodies.set(part, body);
+    communityImpulseStatuses.set(part, "intact");
+  });
+}
+
+function getCommunityModelsDebug(communityInstances: CommunityModelInstance[]): Record<string, unknown> {
+  let visiblePartCount = 0;
+  communityInstances.forEach((instance) => {
+    instance.root.traverse((object) => {
+      if (object.visible && object.userData.communityModelPart === true) {
+        visiblePartCount += 1;
+      }
+    });
+  });
+
+  return {
+    modelFormat: "ldraw",
+    instanceCount: communityInstances.length,
+    visiblePartCount,
+    sourceKinds: [...new Set(communityInstances.map((instance) => instance.sourceKind))],
+    statuses: Object.fromEntries(communityInstances.map((instance) => [instance.id, instance.status]))
+  };
+}
+
+function getCommunityModelHitRadius(root: Group): number {
+  const size = new Vector3();
+  const bounds = new Box3().setFromObject(root);
+  if (bounds.isEmpty()) {
+    return 1.2;
+  }
+  bounds.getSize(size);
+  return Math.max(0.8, Math.min(2.4, Math.max(size.x, size.z) / 2));
+}
+
+function getCommunityPartHalfExtents(object: Object3D): { x: number; y: number; z: number } {
+  const size = new Vector3();
+  const bounds = new Box3().setFromObject(object);
+  bounds.getSize(size);
+  return {
+    x: Math.max(0.06, Math.min(0.32, size.x / 2)),
+    y: Math.max(0.04, Math.min(0.28, size.y / 2)),
+    z: Math.max(0.06, Math.min(0.32, size.z / 2))
+  };
+}
+
 function registerPhysicsAssemblies(world: FarmWorld, physics: PhysicsWorldController): void {
   if (physicsRegisteredWorlds.has(world)) {
     return;
@@ -642,7 +951,7 @@ function updateHud(hud: HTMLElement, state: GameState, audio: GameAudioControlle
     <div class="hud-title">LEGO EXCAVATOR FARM</div>
     <div data-testid="mode">状态：${modeLabel}</div>
     <div data-testid="camera-mode">镜头：${cameraLabel}</div>
-    <div>WASD 行走/开车 | 空格 跳跃 | E 上车/下车 | J/L 上车回转 | U/O 大臂 | N/M 小臂 | Y/H 铲斗</div>
+    <div>WASD 行走/开车 | 空格 跳跃 | E 上车/下车 | B 模型库 | J/L 上车回转 | U/O 大臂 | N/M 小臂 | Y/H 铲斗</div>
     <div>拆卸：${detachedCount} 已拆 / ${damagedCount} 受损</div>
     <div data-testid="audio-mode">声音：${audioLabel}</div>
   `;

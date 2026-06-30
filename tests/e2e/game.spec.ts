@@ -249,4 +249,64 @@ test.describe("lego excavator game", () => {
     expect(statuses.barn).toBe("detached");
     expect(Number(destructibleDebug.visiblePhysicsPartCount)).toBeGreaterThan(0);
   });
+
+  test("REQ-0005-002 opens the LDraw community model browser", async ({ page }) => {
+    await page.goto("/");
+
+    await page.keyboard.press("KeyB");
+
+    const panel = page.getByTestId("community-model-panel");
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText("LDraw 模型库");
+    await expect(panel).toContainText("Mini Construction");
+    await expect(panel).toContainText("许可证");
+    await expect(panel.locator("[data-testid='community-model-card']")).toHaveCount(3);
+
+    await page.keyboard.press("KeyB");
+    await expect(panel).toBeHidden();
+  });
+
+  test("REQ-0005-003 and REQ-0005-004 spawns and breaks a loaded LDraw community model", async ({ page }) => {
+    await page.goto("/");
+
+    await page.keyboard.press("KeyB");
+    await page.getByTestId("spawn-community-model-mini-construction").click();
+
+    await page.waitForFunction(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
+      return Number(communityModels?.instanceCount ?? 0) > 0 && Number(communityModels?.visiblePartCount ?? 0) > 0;
+    });
+
+    const spawnedDebug = await page.evaluate(() => window.__legoGameDebug?.communityModels as Record<string, unknown>);
+    expect(spawnedDebug.instanceCount).toBe(1);
+    expect(spawnedDebug.modelFormat).toBe("ldraw");
+    expect(spawnedDebug.sourceKinds).toContain("ldraw-packed");
+    expect(Number(spawnedDebug.visiblePartCount)).toBeGreaterThan(0);
+
+    await page.evaluate(() => {
+      const debug = window.__legoGameDebug as
+        | ({ teleport?: (options: { mode: "driving"; excavatorPosition: { x: number; y: number; z: number } }) => void })
+        | undefined;
+      debug?.teleport?.({ mode: "driving", excavatorPosition: { x: 6.6, y: 0, z: -1.2 } });
+    });
+    await expect(page.getByTestId("mode")).toContainText("驾驶挖掘机");
+
+    await page.keyboard.down("KeyW");
+    await page.waitForTimeout(1200);
+    await page.keyboard.up("KeyW");
+    await page.waitForFunction(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
+      const physics = window.__legoGameDebug?.physics as Record<string, unknown> | undefined;
+      return communityModels?.statuses && Object.values(communityModels.statuses as Record<string, unknown>).includes("detached") && Number(physics?.brokenLinkCount ?? 0) > 0;
+    });
+
+    const firstPhysics = await page.evaluate(() => window.__legoGameDebug?.physics as Record<string, unknown>);
+    await page.waitForTimeout(450);
+    const secondPhysics = await page.evaluate(() => window.__legoGameDebug?.physics as Record<string, unknown>);
+    const detachedDebug = await page.evaluate(() => window.__legoGameDebug?.communityModels as Record<string, unknown>);
+
+    expect(Object.values(detachedDebug.statuses as Record<string, unknown>)).toContain("detached");
+    expect(Number(firstPhysics.brokenLinkCount)).toBeGreaterThan(0);
+    expect(secondPhysics.movingPartSample).not.toEqual(firstPhysics.movingPartSample);
+  });
 });
