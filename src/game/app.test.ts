@@ -83,6 +83,7 @@ describe("community model placement", () => {
   it("REQ-0007-002 spins marked community vehicle wheels only while driving", () => {
     const wheel = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
     wheel.userData.communityModelWheel = true;
+    wheel.userData.communityWheelAxis = "x";
     const nonWheel = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
     const instance = {
       parts: [wheel, nonWheel]
@@ -98,5 +99,20 @@ describe("community model placement", () => {
     animateCommunityVehicleWheels(instance, 0);
 
     expect(wheel.rotation.x).toBe(firstRotation);
+  });
+
+  it("REQ-0007-002 spins community vehicle wheels around their detected axle axis", () => {
+    const wheel = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
+    wheel.userData.communityModelWheel = true;
+    wheel.userData.communityWheelAxis = "z";
+    const instance = {
+      parts: [wheel]
+    };
+
+    animateCommunityVehicleWheels(instance, 1);
+
+    expect(wheel.rotation.z).not.toBe(0);
+    expect(wheel.rotation.x).toBe(0);
+    expect(wheel.rotation.y).toBe(0);
   });
 });

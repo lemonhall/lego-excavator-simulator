@@ -4,8 +4,11 @@ import { describe, expect, it } from "vitest";
 import {
   analyzeLDrawText,
   extractTopLevelLDrawPartReferences,
+  inferCommunityWheelAxis,
+  inferCommunityWheelAxisFromObject,
   isWheelLikeLDrawPartSize,
   normalizeLoadedLDrawModel,
+  selectCommunityVehicleWheelCandidates,
   setCommunityModelEdgeVisibility,
   validateCommunityModelCatalog,
   type CommunityModelCatalog
@@ -200,5 +203,54 @@ describe("community LDraw models", () => {
     expect(isWheelLikeLDrawPartSize(new Vector3(0.5, 0.5, 0.18))).toBe(true);
     expect(isWheelLikeLDrawPartSize(new Vector3(1.2, 0.2, 0.35))).toBe(false);
     expect(isWheelLikeLDrawPartSize(new Vector3(0.8, 0.7, 0.7))).toBe(false);
+  });
+
+  it("REQ-0007-002 selects only the matching bottom wheel set for vehicle models", () => {
+    const makeCandidate = (name: string, size: Vector3, centerY: number) => ({
+      object: new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial()),
+      size,
+      center: new Vector3(0, centerY, 0),
+      name
+    });
+    const wheelSize = new Vector3(0.32, 0.72, 0.72);
+    const bottomWheels = Array.from({ length: 4 }, (_, index) => makeCandidate(`wheel${index}`, wheelSize.clone(), 0.22));
+    const radarDish = makeCandidate("radarDish", wheelSize.clone(), 1.65);
+    const hands = Array.from({ length: 2 }, (_, index) =>
+      makeCandidate(`hand${index}`, new Vector3(0.16, 0.44, 0.44), 0.82)
+    );
+    const rootBounds = new Box3(new Vector3(-1.4, 0, -1.4), new Vector3(1.4, 2.2, 1.4));
+
+    const selected = selectCommunityVehicleWheelCandidates([...bottomWheels, radarDish, ...hands], rootBounds, [4]);
+
+    expect(selected.map((candidate) => candidate.name)).toEqual(["wheel0", "wheel1", "wheel2", "wheel3"]);
+  });
+
+  it("REQ-0007-002 rejects bottom wheel-like groups unless they match 4 or 6 equal parts", () => {
+    const candidates = Array.from({ length: 5 }, (_, index) => ({
+      object: new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial()),
+      size: new Vector3(0.32, 0.72, 0.72),
+      center: new Vector3(index * 0.2, 0.18, 0),
+      name: `almostWheel${index}`
+    }));
+    const rootBounds = new Box3(new Vector3(-1.4, 0, -1.4), new Vector3(1.4, 1.4, 1.4));
+
+    expect(selectCommunityVehicleWheelCandidates(candidates, rootBounds, [4, 6])).toHaveLength(0);
+  });
+
+  it("REQ-0007-002 infers the wheel axle from the thinnest part dimension", () => {
+    expect(inferCommunityWheelAxis(new Vector3(0.18, 0.7, 0.72))).toBe("x");
+    expect(inferCommunityWheelAxis(new Vector3(0.72, 0.16, 0.7))).toBe("y");
+    expect(inferCommunityWheelAxis(new Vector3(0.72, 0.7, 0.16))).toBe("z");
+  });
+
+  it("REQ-0007-002 infers wheel axle from local geometry instead of the world-aligned box", () => {
+    const wheel = new Mesh(new BoxGeometry(0.72, 0.72, 0.16), new MeshStandardMaterial());
+    wheel.rotation.y = Math.PI / 2;
+    wheel.updateMatrixWorld(true);
+    const worldSize = new Vector3();
+    new Box3().setFromObject(wheel).getSize(worldSize);
+
+    expect(inferCommunityWheelAxis(worldSize)).toBe("x");
+    expect(inferCommunityWheelAxisFromObject(wheel, worldSize)).toBe("z");
   });
 });

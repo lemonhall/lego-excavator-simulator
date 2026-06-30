@@ -23,7 +23,8 @@ import {
   validateCommunityModelCatalog,
   type CommunityModelCatalog,
   type CommunityModelInstance,
-  type CommunityModelManifestEntry
+  type CommunityModelManifestEntry,
+  type CommunityWheelAxis
 } from "./communityModels";
 import { KeyboardInput } from "./input";
 import { loadOfficialWorkerModel } from "./officialWorkerModel";
@@ -819,15 +820,22 @@ export function animateCommunityVehicleWheels(
   const spin = travelDistance * COMMUNITY_WHEEL_SPIN_PER_METER;
   instance.parts.forEach((part) => {
     if (part.userData.communityModelWheel === true) {
-      if (typeof part.userData.communityWheelBaseRotationX !== "number") {
-        part.userData.communityWheelBaseRotationX = part.rotation.x;
-      }
+      const axis = getCommunityWheelAxis(part);
+      const baseRotationKey = `communityWheelBaseRotation${axis.toUpperCase()}`;
+      const currentBaseRotation = part.userData[baseRotationKey];
+      const baseRotation = typeof currentBaseRotation === "number" ? currentBaseRotation : part.rotation[axis];
+      part.userData[baseRotationKey] = baseRotation;
       const previousSpin = typeof part.userData.communityWheelSpin === "number" ? part.userData.communityWheelSpin : 0;
       const nextSpin = previousSpin - spin;
       part.userData.communityWheelSpin = nextSpin;
-      part.rotation.x = part.userData.communityWheelBaseRotationX + nextSpin;
+      part.rotation[axis] = baseRotation + nextSpin;
     }
   });
+}
+
+function getCommunityWheelAxis(part: Object3D): CommunityWheelAxis {
+  const axis = part.userData.communityWheelAxis;
+  return axis === "x" || axis === "y" || axis === "z" ? axis : "x";
 }
 
 function updateCommunityModelImpactState(communityInstances: CommunityModelInstance[], state: GameState): void {
@@ -995,6 +1003,8 @@ function getCommunityModelsDebug(
   let wheelRotationSample: number | undefined;
   const instances: Record<string, unknown>[] = [];
   communityInstances.forEach((instance) => {
+    let instanceWheelCount = 0;
+    const wheelAxes = new Set<string>();
     instance.root.traverse((object) => {
       if (object.visible && object.userData.communityModelPart === true) {
         visiblePartCount += 1;
@@ -1004,8 +1014,11 @@ function getCommunityModelsDebug(
       }
       if (object.userData.communityModelWheel === true) {
         wheelCount += 1;
+        instanceWheelCount += 1;
+        wheelAxes.add(getCommunityWheelAxis(object));
         if (!activeVehicleInstanceId || instance.id === activeVehicleInstanceId) {
-          wheelRotationSample ??= object.rotation.x;
+          const axis = getCommunityWheelAxis(object);
+          wheelRotationSample ??= object.rotation[axis];
         }
       }
     });
@@ -1016,7 +1029,9 @@ function getCommunityModelsDebug(
       status: instance.status,
       position: instance.root.position.toArray(),
       boundsMin: bounds.min.toArray(),
-      boundsMax: bounds.max.toArray()
+      boundsMax: bounds.max.toArray(),
+      wheelCount: instanceWheelCount,
+      wheelAxes: [...wheelAxes]
     });
   });
 

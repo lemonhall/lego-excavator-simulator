@@ -61,6 +61,14 @@ export interface CommunityModelInstance {
   parts: Object3D[];
 }
 
+export type CommunityWheelAxis = "x" | "y" | "z";
+
+export interface CommunityWheelCandidate {
+  object: Object3D;
+  size: Vector3;
+  center: Vector3;
+}
+
 export async function loadCommunityModelCatalog(basePath = "/community-models/manifest.json"): Promise<CommunityModelCatalog> {
   const response = await fetch(basePath);
   if (!response.ok) {
@@ -270,16 +278,29 @@ function tagCommunityVehicleWheels(root: Group, model: CommunityModelManifestEnt
     return;
   }
 
+  root.updateMatrixWorld(true);
+  const rootBounds = new Box3().setFromObject(root);
+  const candidates: CommunityWheelCandidate[] = [];
   root.traverse((object) => {
     if (!(object instanceof Mesh) || object.userData.communityModelPart !== true) {
       return;
     }
 
+    object.userData.communityModelWheel = false;
     const size = new Vector3();
-    new Box3().setFromObject(object).getSize(size);
+    const center = new Vector3();
+    const bounds = new Box3().setFromObject(object);
+    bounds.getSize(size);
+    bounds.getCenter(center);
     if (isWheelLikeLDrawPartSize(size)) {
-      object.userData.communityModelWheel = true;
+      candidates.push({ object, size, center });
     }
+  });
+
+  const selected = selectCommunityVehicleWheelCandidates(candidates, rootBounds, getExpectedWheelCounts(model));
+  selected.forEach((candidate) => {
+    candidate.object.userData.communityModelWheel = true;
+    candidate.object.userData.communityWheelAxis = inferCommunityWheelAxisFromObject(candidate.object, candidate.size);
   });
 }
 
@@ -295,6 +316,113 @@ export function isWheelLikeLDrawPartSize(size: Vector3): boolean {
   const diameterRatio = diameterA / diameterB;
   const thicknessRatio = thin / diameterB;
   return diameterRatio >= 0.72 && thicknessRatio <= 0.5 && diameterB >= 0.12;
+}
+
+export function inferCommunityWheelAxis(size: Vector3): CommunityWheelAxis {
+  const dimensions: Array<{ axis: CommunityWheelAxis; value: number }> = [
+    { axis: "x", value: size.x },
+    { axis: "y", value: size.y },
+    { axis: "z", value: size.z }
+  ];
+  dimensions.sort((a, b) => a.value - b.value);
+  return dimensions[0]?.axis ?? "x";
+}
+
+export function inferCommunityWheelAxisFromObject(object: Object3D, fallbackWorldSize: Vector3): CommunityWheelAxis {
+  if (object instanceof Mesh) {
+    const geometry = object.geometry;
+    if (!geometry.boundingBox) {
+      geometry.computeBoundingBox();
+    }
+    const localBounds = geometry.boundingBox;
+    if (localBounds && !localBounds.isEmpty()) {
+      const localSize = localBounds.getSize(new Vector3());
+      if (isWheelLikeLDrawPartSize(localSize)) {
+        return inferCommunityWheelAxis(localSize);
+      }
+    }
+  }
+
+  return inferCommunityWheelAxis(fallbackWorldSize);
+}
+
+export function selectCommunityVehicleWheelCandidates<T extends CommunityWheelCandidate>(
+  candidates: T[],
+  rootBounds: Box3,
+  expectedWheelCounts = [4, 6]
+): T[] {
+  if (rootBounds.isEmpty() || candidates.length === 0) {
+    return [];
+  }
+
+  const rootSize = rootBounds.getSize(new Vector3());
+  const bottomLimit = rootBounds.min.y + rootSize.y * 0.42;
+  const bottomCandidates = candidates.filter(
+    (candidate) => isWheelLikeLDrawPartSize(candidate.size) && candidate.center.y <= bottomLimit
+  );
+  const groups: T[][] = [];
+
+  for (const candidate of bottomCandidates) {
+    const group = groups.find((existing) => areWheelSizesSimilar(existing[0]?.size, candidate.size));
+    if (group) {
+      group.push(candidate);
+    } else {
+      groups.push([candidate]);
+    }
+  }
+
+  const allowedCounts = new Set(expectedWheelCounts);
+  const matchingGroups = groups.filter((group) => allowedCounts.has(group.length));
+  matchingGroups.sort((a, b) => {
+    const averageYDelta = averageWheelCenterY(a) - averageWheelCenterY(b);
+    if (Math.abs(averageYDelta) > 0.01) {
+      return averageYDelta;
+    }
+    return averageWheelDiameter(b) - averageWheelDiameter(a);
+  });
+
+  return matchingGroups[0] ?? [];
+}
+
+function getExpectedWheelCounts(model: CommunityModelManifestEntry): number[] {
+  const id = model.id.toLowerCase();
+  if (id.includes("radar-truck")) {
+    return [4];
+  }
+  if (id.includes("mini-construction")) {
+    return [6];
+  }
+  return [4, 6];
+}
+
+function areWheelSizesSimilar(a: Vector3 | undefined, b: Vector3): boolean {
+  if (!a) {
+    return false;
+  }
+  const first = sortedVectorDimensions(a);
+  const second = sortedVectorDimensions(b);
+  return first.every((value, index) => {
+    const other = second[index] ?? 0;
+    const tolerance = Math.max(0.035, Math.max(value, other) * 0.08);
+    return Math.abs(value - other) <= tolerance;
+  });
+}
+
+function sortedVectorDimensions(size: Vector3): number[] {
+  return [size.x, size.y, size.z].sort((a, b) => a - b);
+}
+
+function averageWheelCenterY(candidates: CommunityWheelCandidate[]): number {
+  return candidates.reduce((sum, candidate) => sum + candidate.center.y, 0) / Math.max(1, candidates.length);
+}
+
+function averageWheelDiameter(candidates: CommunityWheelCandidate[]): number {
+  return (
+    candidates.reduce((sum, candidate) => {
+      const dimensions = sortedVectorDimensions(candidate.size);
+      return sum + ((dimensions[1] ?? 0) + (dimensions[2] ?? 0)) / 2;
+    }, 0) / Math.max(1, candidates.length)
+  );
 }
 
 function applyScenePlasticTreatment(mesh: Mesh): void {
