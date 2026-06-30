@@ -72,6 +72,13 @@ const fallbackPhysicsDebug = {
 const physicsRegisteredWorlds = new WeakSet<FarmWorld>();
 const communityPhysicsBodies = new WeakMap<Object3D, PhysicsBodyHandle>();
 const communityImpulseStatuses = new WeakMap<Object3D, CommunityModelInstance["status"]>();
+const COMMUNITY_MODEL_SLOT_SPACING = 5.2;
+
+export interface CommunityModelPlacement {
+  x: number;
+  z: number;
+  yaw: number;
+}
 
 export function mountGameApp(root: HTMLElement): GameApp {
   root.innerHTML = "";
@@ -657,8 +664,20 @@ function renderModelPanel(
 }
 
 function positionCommunityInstance(root: Group, index: number): void {
-  root.position.set(6.6 + (index % 2) * 2.2, 0, -3.2 - Math.floor(index / 2) * 2.2);
-  root.rotation.y = index % 2 === 0 ? 0 : Math.PI * 0.15;
+  const placement = computeCommunityModelPlacement(index);
+  root.position.set(placement.x, 0, placement.z);
+  root.rotation.y = placement.yaw;
+}
+
+export function computeCommunityModelPlacement(index: number): CommunityModelPlacement {
+  const column = index % 2;
+  const row = Math.floor(index / 2);
+  const yawPattern = [0, Math.PI * 0.08, -Math.PI * 0.08, Math.PI * 0.16];
+  return {
+    x: 6.6 + column * COMMUNITY_MODEL_SLOT_SPACING,
+    z: -4.6 - row * COMMUNITY_MODEL_SLOT_SPACING,
+    yaw: yawPattern[index % yawPattern.length] ?? 0
+  };
 }
 
 function updateCommunityModelImpactState(communityInstances: CommunityModelInstance[], state: GameState): void {

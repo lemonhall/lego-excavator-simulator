@@ -190,9 +190,10 @@ export function normalizeLoadedLDrawModel(object: Group, model: CommunityModelMa
 
   object.name = `${instanceId}_ldrawRoot`;
   object.userData.communityModelVisualRoot = true;
+  object.rotation.x = Math.PI;
   root.add(object);
-  root.scale.setScalar(model.recommendedScale);
   normalizeModelCenter(root);
+  root.scale.setScalar(model.recommendedScale);
   tagLoadedLDrawParts(root, instanceId);
   return root;
 }

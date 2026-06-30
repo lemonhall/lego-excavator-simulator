@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
+import { Box3, BoxGeometry, Group, Mesh, MeshStandardMaterial, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import {
   analyzeLDrawText,
   extractTopLevelLDrawPartReferences,
+  normalizeLoadedLDrawModel,
   validateCommunityModelCatalog,
   type CommunityModelCatalog
 } from "./communityModels";
@@ -124,5 +126,54 @@ describe("community LDraw models", () => {
       expect(summary.partReferenceCount).toBeGreaterThan(0);
       expect(summary.uniquePartFiles.length).toBeGreaterThan(0);
     }
+  });
+
+  it("REQ-0005-003 normalizes scaled LDraw models so their bottom rests on the ground plane", () => {
+    const object = new Group();
+    const mesh = new Mesh(new BoxGeometry(10, 100, 10), new MeshStandardMaterial());
+    mesh.position.y = -50;
+    object.add(mesh);
+
+    const root = normalizeLoadedLDrawModel(
+      object,
+      {
+        ...realLDrawCatalog.models[0],
+        recommendedScale: 0.02
+      },
+      "boundsProbe"
+    );
+
+    root.updateMatrixWorld(true);
+    const bounds = new Box3().setFromObject(root);
+
+    expect(bounds.min.y).toBeCloseTo(0, 5);
+    expect(bounds.max.y).toBeCloseTo(2, 5);
+  });
+
+  it("REQ-0005-003 converts LDraw's inverted Y-up model space before grounding", () => {
+    const object = new Group();
+    const topMarker = new Mesh(new BoxGeometry(2, 2, 2), new MeshStandardMaterial());
+    topMarker.name = "topMarker";
+    topMarker.position.y = -20;
+    const bottomMarker = new Mesh(new BoxGeometry(2, 2, 2), new MeshStandardMaterial());
+    bottomMarker.name = "bottomMarker";
+    bottomMarker.position.y = 20;
+    object.add(topMarker, bottomMarker);
+
+    const root = normalizeLoadedLDrawModel(
+      object,
+      {
+        ...realLDrawCatalog.models[0],
+        recommendedScale: 1
+      },
+      "orientationProbe"
+    );
+
+    root.updateMatrixWorld(true);
+    const topWorldY = topMarker.getWorldPosition(new Vector3()).y;
+    const bottomWorldY = bottomMarker.getWorldPosition(new Vector3()).y;
+
+    expect(topWorldY).toBeGreaterThan(bottomWorldY);
+    expect(new Box3().setFromObject(root).min.y).toBeCloseTo(0, 5);
   });
 });
