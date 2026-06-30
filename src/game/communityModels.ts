@@ -196,6 +196,7 @@ export function normalizeLoadedLDrawModel(object: Group, model: CommunityModelMa
   normalizeModelCenter(root);
   root.scale.setScalar(model.recommendedScale);
   tagLoadedLDrawParts(root, instanceId);
+  tagCommunityVehicleWheels(root, model);
   return root;
 }
 
@@ -262,6 +263,38 @@ function tagLoadedLDrawParts(root: Group, instanceId: string): void {
     applyScenePlasticTreatment(object);
     index += 1;
   });
+}
+
+function tagCommunityVehicleWheels(root: Group, model: CommunityModelManifestEntry): void {
+  if (model.category.toLowerCase() !== "vehicle") {
+    return;
+  }
+
+  root.traverse((object) => {
+    if (!(object instanceof Mesh) || object.userData.communityModelPart !== true) {
+      return;
+    }
+
+    const size = new Vector3();
+    new Box3().setFromObject(object).getSize(size);
+    if (isWheelLikeLDrawPartSize(size)) {
+      object.userData.communityModelWheel = true;
+    }
+  });
+}
+
+export function isWheelLikeLDrawPartSize(size: Vector3): boolean {
+  const dimensions = [size.x, size.y, size.z].sort((a, b) => a - b);
+  const thin = dimensions[0] ?? 0;
+  const diameterA = dimensions[1] ?? 0;
+  const diameterB = dimensions[2] ?? 0;
+  if (thin <= 0 || diameterA <= 0 || diameterB <= 0) {
+    return false;
+  }
+
+  const diameterRatio = diameterA / diameterB;
+  const thicknessRatio = thin / diameterB;
+  return diameterRatio >= 0.72 && thicknessRatio <= 0.5 && diameterB >= 0.12;
 }
 
 function applyScenePlasticTreatment(mesh: Mesh): void {

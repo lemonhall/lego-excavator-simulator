@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   analyzeLDrawText,
   extractTopLevelLDrawPartReferences,
+  isWheelLikeLDrawPartSize,
   normalizeLoadedLDrawModel,
   setCommunityModelEdgeVisibility,
   validateCommunityModelCatalog,
@@ -193,5 +194,11 @@ describe("community LDraw models", () => {
 
     setCommunityModelEdgeVisibility(root, true);
     expect(edge.visible).toBe(true);
+  });
+
+  it("REQ-0007-002 identifies wheel-like geometry by proportions, not low vehicle position", () => {
+    expect(isWheelLikeLDrawPartSize(new Vector3(0.5, 0.5, 0.18))).toBe(true);
+    expect(isWheelLikeLDrawPartSize(new Vector3(1.2, 0.2, 0.35))).toBe(false);
+    expect(isWheelLikeLDrawPartSize(new Vector3(0.8, 0.7, 0.7))).toBe(false);
   });
 });

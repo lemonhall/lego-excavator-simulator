@@ -78,6 +78,7 @@ const communityImpulseStatuses = new WeakMap<Object3D, CommunityModelInstance["s
 const COMMUNITY_MODEL_SLOT_SPACING = 7.2;
 const COMMUNITY_VEHICLE_SPEED = 4.2;
 const COMMUNITY_VEHICLE_INTERACTION_DISTANCE = 2.4;
+const COMMUNITY_WHEEL_SPIN_PER_METER = 7.5;
 
 interface CommunityVehicleDriveState {
   instanceId: string;
@@ -226,6 +227,12 @@ export function mountGameApp(root: HTMLElement): GameApp {
       world.playerRoot.visible = false;
     }
     syncCommunityModels(communityInstances, state, physics);
+    if (communityVehicleDrive) {
+      const drivenInstance = communityInstances.find((instance) => instance.id === communityVehicleDrive?.instanceId);
+      if (drivenInstance) {
+        animateCommunityVehicleWheels(drivenInstance, communityDriveResult.travelDistance);
+      }
+    }
     syncDebugState(world, state, audio, physics, communityInstances, communityVehicleDrive, (options) => {
       if (options.mode) {
         state.mode = options.mode;
@@ -276,7 +283,7 @@ function syncDebugState(
     fallbackVisible: world.playerRoot.getObjectByName("playerProceduralFallback")?.visible,
     excavator: getExcavatorDebug(world, state),
     destructibles: getDestructibleDebug(world, state),
-    communityModels: getCommunityModelsDebug(communityInstances),
+    communityModels: getCommunityModelsDebug(communityInstances, communityVehicleDrive?.instanceId),
     controls: {
       pointerLocked: document.pointerLockElement !== null,
       cameraYaw: state.camera.yaw,
@@ -745,18 +752,24 @@ function updateCommunityVehicleDrive(
   input: { forward: boolean; backward: boolean; left: boolean; right: boolean; interact: boolean },
   drive: CommunityVehicleDriveState | undefined,
   dt: number
-): { drive: CommunityVehicleDriveState | undefined; consumeInteract: boolean; playerPosition?: { x: number; y: number; z: number } } {
+): {
+  drive: CommunityVehicleDriveState | undefined;
+  consumeInteract: boolean;
+  playerPosition?: { x: number; y: number; z: number };
+  travelDistance: number;
+} {
   if (drive) {
     const instance = instances.find((candidate) => candidate.id === drive.instanceId && candidate.status === "intact");
     if (!instance) {
-      return { drive: undefined, consumeInteract: false };
+      return { drive: undefined, consumeInteract: false, travelDistance: 0 };
     }
     if (input.interact) {
       const position = instance.root.position;
       return {
         drive: undefined,
         consumeInteract: true,
-        playerPosition: { x: position.x + 1.4, y: 0, z: position.z + 0.8 }
+        playerPosition: { x: position.x + 1.4, y: 0, z: position.z + 0.8 },
+        travelDistance: 0
       };
     }
 
@@ -766,18 +779,18 @@ function updateCommunityVehicleDrive(
     if (delta.heading !== undefined) {
       instance.root.rotation.y = delta.heading;
     }
-    return { drive, consumeInteract: false };
+    return { drive, consumeInteract: false, travelDistance: Math.hypot(delta.x, delta.z) };
   }
 
   if (!input.interact || state.mode !== "onFoot") {
-    return { drive, consumeInteract: false };
+    return { drive, consumeInteract: false, travelDistance: 0 };
   }
 
   const nearest = findNearestDrivableCommunityVehicle(instances, state.player.position);
   if (!nearest) {
-    return { drive, consumeInteract: false };
+    return { drive, consumeInteract: false, travelDistance: 0 };
   }
-  return { drive: { instanceId: nearest.id }, consumeInteract: true };
+  return { drive: { instanceId: nearest.id }, consumeInteract: true, travelDistance: 0 };
 }
 
 function findNearestDrivableCommunityVehicle(
@@ -797,6 +810,24 @@ function findNearestDrivableCommunityVehicle(
     }
   }
   return best;
+}
+
+export function animateCommunityVehicleWheels(
+  instance: Pick<CommunityModelInstance, "parts"> | { parts: Object3D[] },
+  travelDistance: number
+): void {
+  const spin = travelDistance * COMMUNITY_WHEEL_SPIN_PER_METER;
+  instance.parts.forEach((part) => {
+    if (part.userData.communityModelWheel === true) {
+      if (typeof part.userData.communityWheelBaseRotationX !== "number") {
+        part.userData.communityWheelBaseRotationX = part.rotation.x;
+      }
+      const previousSpin = typeof part.userData.communityWheelSpin === "number" ? part.userData.communityWheelSpin : 0;
+      const nextSpin = previousSpin - spin;
+      part.userData.communityWheelSpin = nextSpin;
+      part.rotation.x = part.userData.communityWheelBaseRotationX + nextSpin;
+    }
+  });
 }
 
 function updateCommunityModelImpactState(communityInstances: CommunityModelInstance[], state: GameState): void {
@@ -954,9 +985,14 @@ function registerCommunityModelPhysics(
   });
 }
 
-function getCommunityModelsDebug(communityInstances: CommunityModelInstance[]): Record<string, unknown> {
+function getCommunityModelsDebug(
+  communityInstances: CommunityModelInstance[],
+  activeVehicleInstanceId?: string
+): Record<string, unknown> {
   let visiblePartCount = 0;
   let visibleEdgeCount = 0;
+  let wheelCount = 0;
+  let wheelRotationSample: number | undefined;
   const instances: Record<string, unknown>[] = [];
   communityInstances.forEach((instance) => {
     instance.root.traverse((object) => {
@@ -965,6 +1001,12 @@ function getCommunityModelsDebug(communityInstances: CommunityModelInstance[]): 
       }
       if (object.visible && object.userData.communityModelEdge === true) {
         visibleEdgeCount += 1;
+      }
+      if (object.userData.communityModelWheel === true) {
+        wheelCount += 1;
+        if (!activeVehicleInstanceId || instance.id === activeVehicleInstanceId) {
+          wheelRotationSample ??= object.rotation.x;
+        }
       }
     });
     const bounds = new Box3().setFromObject(instance.root);
@@ -983,6 +1025,8 @@ function getCommunityModelsDebug(communityInstances: CommunityModelInstance[]): 
     instanceCount: communityInstances.length,
     visiblePartCount,
     visibleEdgeCount,
+    wheelCount,
+    wheelRotationSample,
     sourceKinds: [...new Set(communityInstances.map((instance) => instance.sourceKind))],
     statuses: Object.fromEntries(communityInstances.map((instance) => [instance.id, instance.status])),
     instances

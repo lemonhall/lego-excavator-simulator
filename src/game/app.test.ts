@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Mesh, BoxGeometry, MeshStandardMaterial, Vector3 } from "three";
 import {
   applyDetachedCommunityFallbackPose,
+  animateCommunityVehicleWheels,
   computeCommunityModelPlacement,
   computeCommunityVehicleDriveDelta,
   isDrivableCommunityModel
@@ -77,5 +78,25 @@ describe("community model placement", () => {
 
     expect(isDrivableCommunityModel(model)).toBe(true);
     expect(isDrivableCommunityModel(building)).toBe(false);
+  });
+
+  it("REQ-0007-002 spins marked community vehicle wheels only while driving", () => {
+    const wheel = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
+    wheel.userData.communityModelWheel = true;
+    const nonWheel = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
+    const instance = {
+      parts: [wheel, nonWheel]
+    };
+
+    animateCommunityVehicleWheels(instance, 1.2);
+
+    expect(wheel.rotation.x).not.toBe(0);
+    expect(nonWheel.rotation.x).toBe(0);
+    const firstRotation = wheel.rotation.x;
+
+    wheel.rotation.x = 0;
+    animateCommunityVehicleWheels(instance, 0);
+
+    expect(wheel.rotation.x).toBe(firstRotation);
   });
 });
