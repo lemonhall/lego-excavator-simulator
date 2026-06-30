@@ -216,4 +216,37 @@ test.describe("lego excavator game", () => {
     expect(Number(destructibleDebug.visiblePhysicsPartCount)).toBeGreaterThan(0);
     expect(Number(physicsDebug.brokenLinkCount)).toBeGreaterThan(0);
   });
+
+  test("REQ-0004-005 breaks the visible barn assembly after repeated impacts", async ({ page }) => {
+    await page.goto("/");
+
+    await page.evaluate(() => {
+      const debug = window.__legoGameDebug as
+        | ({ teleport?: (options: { mode: "driving"; excavatorPosition: { x: number; y: number; z: number } }) => void })
+        | undefined;
+      debug?.teleport?.({ mode: "driving", excavatorPosition: { x: -9, y: 0, z: -5.5 } });
+    });
+    await expect(page.getByTestId("mode")).toContainText("驾驶挖掘机");
+
+    for (let i = 0; i < 3; i += 1) {
+      await page.keyboard.down("KeyW");
+      await page.waitForTimeout(450);
+      await page.keyboard.up("KeyW");
+      await page.keyboard.down("KeyS");
+      await page.waitForTimeout(450);
+      await page.keyboard.up("KeyS");
+    }
+    await page.waitForFunction(() => {
+      const destructibles = window.__legoGameDebug?.destructibles as Record<string, unknown> | undefined;
+      const physics = window.__legoGameDebug?.physics as Record<string, unknown> | undefined;
+      const statuses = destructibles?.statuses as Record<string, unknown> | undefined;
+      return statuses?.barn === "detached" && Number(physics?.brokenLinkCount ?? 0) > 0;
+    });
+
+    const destructibleDebug = await page.evaluate(() => window.__legoGameDebug?.destructibles as Record<string, unknown>);
+    const statuses = destructibleDebug.statuses as Record<string, unknown>;
+
+    expect(statuses.barn).toBe("detached");
+    expect(Number(destructibleDebug.visiblePhysicsPartCount)).toBeGreaterThan(0);
+  });
 });
