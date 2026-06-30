@@ -248,7 +248,7 @@ function updateExcavator(state: GameState, input: GameInput, dt: number): void {
     BUCKET_LIMITS.max
   );
 
-  state.excavator.heading = normalizeAngle(state.excavator.crawlerHeading + state.excavator.upperRotation);
+  state.excavator.heading = state.excavator.upperRotation;
   updateDestructibles(state, input, direction);
 }
 

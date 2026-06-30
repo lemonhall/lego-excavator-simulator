@@ -6,6 +6,7 @@ import {
   Object3D,
   PCFSoftShadowMap,
   PerspectiveCamera,
+  Quaternion,
   SpotLight,
   Vector3,
   WebGLRenderer
@@ -14,6 +15,7 @@ import { deriveSoundState, GameAudioController } from "./audio";
 import { computeCameraRig } from "./camera";
 import { KeyboardInput } from "./input";
 import { loadOfficialWorkerModel } from "./officialWorkerModel";
+import { createPhysicsWorldController, type PhysicsBodyHandle, type PhysicsWorldController } from "./physics";
 import { createInitialGameState, updateGameState, type DestructibleState, type GameState } from "./state";
 import { createFarmWorld, type FarmWorld } from "./world";
 
@@ -31,12 +33,31 @@ declare global {
       officialRig?: Record<string, unknown>;
       excavator?: Record<string, unknown>;
       destructibles?: Record<string, unknown>;
+      physics?: unknown;
       audio?: Record<string, unknown>;
+      teleport?: (options: DebugTeleportOptions) => void;
     };
   }
 }
 
+interface DebugTeleportOptions {
+  mode?: GameState["mode"];
+  excavatorPosition?: { x: number; y: number; z: number };
+}
+
 const FIXED_DT = 1 / 60;
+const destructiblePhysicsBodies = new WeakMap<Object3D, PhysicsBodyHandle>();
+const destructibleImpulseStatuses = new WeakMap<Object3D, DestructibleState["status"]>();
+const fallbackPhysicsDebug = {
+  engine: "loading",
+  ready: false,
+  fixedColliderCount: 0,
+  assemblyBodyCount: 0,
+  activeLinkCount: 0,
+  brokenLinkCount: 0,
+  kinematicColliderCount: 0
+} as const;
+const physicsRegisteredWorlds = new WeakSet<FarmWorld>();
 
 export function mountGameApp(root: HTMLElement): GameApp {
   root.innerHTML = "";
@@ -67,6 +88,15 @@ export function mountGameApp(root: HTMLElement): GameApp {
   const camera = new PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 120);
   const input = new KeyboardInput(window);
   const audio = new GameAudioController();
+  let physics: PhysicsWorldController | undefined;
+  void createPhysicsWorldController()
+    .then((controller) => {
+      physics = controller;
+      registerPhysicsAssemblies(world, controller);
+    })
+    .catch((error: unknown) => {
+      console.warn("Failed to initialize Rapier physics; using visual fallback shards.", error);
+    });
   let state = createInitialGameState();
   let previousState = state;
   let animationFrame = 0;
@@ -97,8 +127,16 @@ export function mountGameApp(root: HTMLElement): GameApp {
     previousState = state;
     state = updateGameState(state, input.snapshot(), FIXED_DT);
     audio.update(deriveSoundState(previousState, state));
-    syncWorld(world, state);
-    syncDebugState(world, state, audio);
+    syncWorld(world, state, physics);
+    syncDebugState(world, state, audio, physics, (options) => {
+      if (options.mode) {
+        state.mode = options.mode;
+        state.player.visible = options.mode === "onFoot";
+      }
+      if (options.excavatorPosition) {
+        state.excavator.position = { ...options.excavatorPosition };
+      }
+    });
     updateCamera(camera, state);
     syncCameraFillLight(world, camera, state);
     updateHud(hud, state, audio);
@@ -122,13 +160,20 @@ export function mountGameApp(root: HTMLElement): GameApp {
   };
 }
 
-function syncDebugState(world: FarmWorld, state: GameState, audio: GameAudioController): void {
+function syncDebugState(
+  world: FarmWorld,
+  state: GameState,
+  audio: GameAudioController,
+  physics: PhysicsWorldController | undefined,
+  teleport: (options: DebugTeleportOptions) => void
+): void {
   window.__legoGameDebug = {
     officialModelLoaded: world.playerRoot.userData.loadedOfficialWorkerModel === true,
     officialModelBounds: world.playerRoot.userData.officialModelBounds,
     fallbackVisible: world.playerRoot.getObjectByName("playerProceduralFallback")?.visible,
     excavator: getExcavatorDebug(world, state),
     destructibles: getDestructibleDebug(world, state),
+    physics: physics?.getDebugState() ?? fallbackPhysicsDebug,
     limbRotations: {
       leftArm: world.playerRoot.getObjectByName("playerLeftArm")?.rotation.x,
       rightArm: world.playerRoot.getObjectByName("playerRightArm")?.rotation.x,
@@ -136,7 +181,8 @@ function syncDebugState(world: FarmWorld, state: GameState, audio: GameAudioCont
       rightLeg: world.playerRoot.getObjectByName("playerRightLeg")?.rotation.x
     },
     officialRig: getOfficialRigDebug(world),
-    audio: audio.getDebugState()
+    audio: audio.getDebugState(),
+    teleport
   };
 }
 
@@ -291,7 +337,7 @@ function getCenterArray(object: Object3D): number[] {
   return center.toArray();
 }
 
-function syncWorld(world: FarmWorld, state: GameState): void {
+function syncWorld(world: FarmWorld, state: GameState, physics: PhysicsWorldController | undefined): void {
   world.playerRoot.visible = state.player.visible;
   world.playerRoot.position.set(state.player.position.x, state.player.position.y, state.player.position.z);
   world.playerRoot.rotation.y = state.player.facing;
@@ -305,7 +351,9 @@ function syncWorld(world: FarmWorld, state: GameState): void {
   world.excavatorStick.rotation.x = state.excavator.stickAngle;
   world.excavatorBucket.rotation.x = state.excavator.bucketAngle;
   syncExcavatorOpacity(world, state);
-  syncDestructibles(world, state);
+  syncPhysics(world, state, physics);
+  syncDestructibles(world, state, physics);
+  physics?.step(FIXED_DT);
 }
 
 function syncExcavatorOpacity(world: FarmWorld, state: GameState): void {
@@ -354,7 +402,7 @@ function syncPlayerWalk(world: FarmWorld, state: GameState): void {
   world.playerRoot.position.y = state.player.position.y + bounce;
 }
 
-function syncDestructibles(world: FarmWorld, state: GameState): void {
+function syncDestructibles(world: FarmWorld, state: GameState, physics: PhysicsWorldController | undefined): void {
   const targetsById = new Map(state.destructibles.map((target) => [target.id, target]));
 
   world.destructibleRoots.forEach((root) => {
@@ -366,28 +414,40 @@ function syncDestructibles(world: FarmWorld, state: GameState): void {
     root.userData.damageStatus = target.status;
     root.traverse((object) => {
       if (object.userData.destructibleCore === true) {
-        object.visible = target.status !== "detached";
+        object.visible = true;
       }
 
-      if (object.userData.destructibleShard === true) {
-        syncDestructibleShard(object, target);
+      if (isDestructiblePhysicsPart(object)) {
+        syncDestructiblePart(object, target, physics);
       }
     });
   });
 }
 
-function syncDestructibleShard(object: Object3D, target: DestructibleState): void {
+function syncDestructiblePart(object: Object3D, target: DestructibleState, physics: PhysicsWorldController | undefined): void {
   const basePosition = object.userData.basePosition;
   const baseRotation = object.userData.baseRotation;
-  if (basePosition instanceof Vector3) {
+  if (!(basePosition instanceof Vector3)) {
+    object.userData.basePosition = object.position.clone();
+  } else {
     object.position.copy(basePosition);
   }
-  if (baseRotation && typeof baseRotation.copy === "function") {
+  if (!baseRotation || typeof baseRotation.copy !== "function") {
+    object.userData.baseRotation = object.rotation.clone();
+  } else {
     object.rotation.copy(baseRotation);
   }
 
-  object.visible = target.status !== "intact";
+  if (object.userData.destructibleShard === true) {
+    object.visible = target.status !== "intact";
+  }
+
   if (target.status === "intact") {
+    return;
+  }
+
+  if (physics) {
+    syncPhysicsPart(object, target, physics);
     return;
   }
 
@@ -399,6 +459,148 @@ function syncDestructibleShard(object: Object3D, target: DestructibleState): voi
   object.position.z += Math.cos(hash * 1.7) * spread;
   object.rotation.x += 0.35 + (hash % 5) * 0.08;
   object.rotation.z += Math.sin(hash * 0.7) * 0.65;
+}
+
+function syncPhysics(world: FarmWorld, state: GameState, physics: PhysicsWorldController | undefined): void {
+  if (!physics) {
+    return;
+  }
+
+  physics.setKinematicBox("excavatorBody", {
+    position: {
+      x: state.excavator.position.x,
+      y: 0.65,
+      z: state.excavator.position.z
+    },
+    halfExtents: { x: 1.35, y: 0.55, z: 1.7 },
+    rotationY: state.excavator.crawlerHeading
+  });
+
+  const bucketPosition = new Vector3();
+  world.excavatorBucket.getWorldPosition(bucketPosition);
+  physics.setKinematicBox("excavatorBucket", {
+    position: {
+      x: bucketPosition.x,
+      y: Math.max(0.25, bucketPosition.y),
+      z: bucketPosition.z
+    },
+    halfExtents: { x: 0.52, y: 0.24, z: 0.44 },
+    rotationY: state.excavator.heading
+  });
+}
+
+function syncPhysicsPart(object: Object3D, target: DestructibleState, physics: PhysicsWorldController): void {
+  const body = destructiblePhysicsBodies.get(object);
+  if (!body) {
+    return;
+  }
+
+  const previousImpulseStatus = destructibleImpulseStatuses.get(object);
+  if (target.status !== "intact" && previousImpulseStatus !== target.status) {
+    const worldPosition = object.getWorldPosition(new Vector3());
+    const worldQuaternion = object.getWorldQuaternion(new Quaternion());
+    physics.setPartTransform(
+      object.name,
+      { x: worldPosition.x, y: worldPosition.y, z: worldPosition.z },
+      { x: worldQuaternion.x, y: worldQuaternion.y, z: worldQuaternion.z, w: worldQuaternion.w }
+    );
+    const hash = stableNameHash(object.name);
+    const direction = new Vector3(worldPosition.x - target.position.x, 0.2, worldPosition.z - target.position.z);
+    if (direction.lengthSq() < 0.01) {
+      direction.set(Math.sin(hash), 0.2, Math.cos(hash));
+    }
+    direction.normalize();
+    const impulseScale = target.status === "detached" ? 1.8 : 0.65;
+    physics.applyPartImpulse(object.name, {
+      x: direction.x * impulseScale,
+      y: 0.15 + (hash % 3) * 0.03,
+      z: direction.z * impulseScale
+    });
+  }
+  destructibleImpulseStatuses.set(object, target.status);
+
+  const translation = body.translation();
+  const rotation = body.rotation();
+  const local = object.parent?.worldToLocal(new Vector3(translation.x, translation.y, translation.z));
+  if (local) {
+    object.position.copy(local);
+  }
+  object.quaternion.copy(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w));
+}
+
+function registerPhysicsAssemblies(world: FarmWorld, physics: PhysicsWorldController): void {
+  if (physicsRegisteredWorlds.has(world)) {
+    return;
+  }
+  physicsRegisteredWorlds.add(world);
+
+  world.destructibleRoots.forEach((root) => {
+    const rootPosition = root.getWorldPosition(new Vector3());
+    const anchorId = `${String(root.userData.destructibleId)}Anchor`;
+    physics.addAssemblyPart({
+      id: anchorId,
+      locked: true,
+      position: { x: rootPosition.x, y: Math.max(0.18, rootPosition.y + 0.2), z: rootPosition.z },
+      halfExtents: { x: 0.08, y: 0.08, z: 0.08 }
+    });
+
+    root.traverse((object) => {
+      if (!isDestructiblePhysicsPart(object)) {
+        return;
+      }
+
+      const originalVisible = object.visible;
+      object.visible = true;
+      const worldPosition = object.getWorldPosition(new Vector3());
+      const colliderOffset = getLocalColliderOffset(object);
+      const body = physics.addAssemblyPart({
+        id: object.name,
+        locked: false,
+        position: { x: worldPosition.x, y: worldPosition.y, z: worldPosition.z },
+        halfExtents: getShardHalfExtents(object),
+        colliderOffset
+      });
+      physics.addBreakableLink({
+        id: `${object.name}Link`,
+        partA: anchorId,
+        partB: object.name,
+        breakDistance: object.userData.destructibleShard === true ? 0.28 : 0.34
+      });
+      destructiblePhysicsBodies.set(object, body);
+      destructibleImpulseStatuses.set(object, "intact");
+      if (object.userData.destructibleShard === true) {
+        object.visible = originalVisible;
+      }
+    });
+  });
+}
+
+function isDestructiblePhysicsPart(object: Object3D): boolean {
+  return object.userData.destructiblePhysicsPart === true || object.userData.destructibleShard === true;
+}
+
+function getShardHalfExtents(object: Object3D): { x: number; y: number; z: number } {
+  const size = new Vector3();
+  new Box3().setFromObject(object).getSize(size);
+  return {
+    x: Math.max(0.08, size.x / 2),
+    y: Math.max(0.04, size.y / 2),
+    z: Math.max(0.08, size.z / 2)
+  };
+}
+
+function getLocalColliderOffset(object: Object3D): { x: number; y: number; z: number } {
+  const worldPosition = object.getWorldPosition(new Vector3());
+  const center = new Vector3();
+  const bounds = new Box3().setFromObject(object);
+  if (bounds.isEmpty()) {
+    return { x: 0, y: 0, z: 0 };
+  }
+
+  bounds.getCenter(center);
+  const worldRotation = object.getWorldQuaternion(new Quaternion());
+  const localOffset = center.sub(worldPosition).applyQuaternion(worldRotation.invert());
+  return { x: localOffset.x, y: localOffset.y, z: localOffset.z };
 }
 
 function stableNameHash(name: string): number {
@@ -449,12 +651,21 @@ function updateHud(hud: HTMLElement, state: GameState, audio: GameAudioControlle
 function getDestructibleDebug(world: FarmWorld, state: GameState): Record<string, unknown> {
   let shardCount = 0;
   let visibleShardCount = 0;
+  let visiblePhysicsPartCount = 0;
+  const visiblePartPositions: Record<string, number[]> = {};
+  const trackedPartNames = new Set(["treeTrunk0", "treeLeaves0", "barnBase"]);
   world.scene.traverse((object) => {
     if (object.userData.destructibleShard === true) {
       shardCount += 1;
       if (object.visible) {
         visibleShardCount += 1;
       }
+    }
+    if (object.visible && object.userData.destructiblePhysicsPart === true) {
+      visiblePhysicsPartCount += 1;
+    }
+    if (trackedPartNames.has(object.name)) {
+      visiblePartPositions[object.name] = object.position.toArray();
     }
   });
 
@@ -464,6 +675,8 @@ function getDestructibleDebug(world: FarmWorld, state: GameState): Record<string
     detachedCount: state.destructibles.filter((target) => target.status === "detached").length,
     shardCount: visibleShardCount,
     totalShardCount: shardCount,
+    visiblePhysicsPartCount,
+    visiblePartPositions,
     statuses: Object.fromEntries(state.destructibles.map((target) => [target.id, target.status]))
   };
 }

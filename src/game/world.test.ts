@@ -256,4 +256,29 @@ describe("farm world", () => {
     expect(shards.some((name) => name.startsWith("treeShard"))).toBe(true);
     expect(shards.some((name) => name.startsWith("fenceShard"))).toBe(true);
   });
+
+  it("REQ-0004-005 marks visible barn and tree pieces as physical assembly parts", () => {
+    const world = createFarmWorld();
+    const visiblePhysicsParts: string[] = [];
+
+    world.scene.traverse((object) => {
+      if (object.visible && object.userData.destructiblePhysicsPart === true) {
+        visiblePhysicsParts.push(object.name);
+      }
+    });
+
+    expect(visiblePhysicsParts).toEqual(expect.arrayContaining(["barnBase", "barnUpper", "barnRoofA", "barnRoofB"]));
+    expect(visiblePhysicsParts).toEqual(expect.arrayContaining(["treeTrunk0", "treeLeaves0"]));
+  });
+
+  it("REQ-0004-005 keeps intact visible destructible pieces in their authored positions", () => {
+    const world = createFarmWorld();
+    const trunk = world.scene.getObjectByName("treeTrunk0");
+    const leaves = world.scene.getObjectByName("treeLeaves0");
+    const barnBase = world.scene.getObjectByName("barnBase");
+
+    expect(trunk?.position.y).toBe(0);
+    expect(leaves?.position.y).toBe(1.55);
+    expect(barnBase?.position.y).toBe(0);
+  });
 });

@@ -20,14 +20,16 @@ PRD-0004 的 v5 设计明确“不引入真实重力模拟”，世界层只根�
 
 ### 新设计
 
-v6 引入 Rapier 3D 物理：
+v6 引入 Rapier 3D 物理，并把可破坏物改为物理装配体，而不是碰撞后替换成碎块：
 
 - 使用 `@dimforge/rapier3d-compat`。
 - 地面使用 fixed collider。
 - 挖掘机车身、履带区域和铲斗使用 kinematic collider，跟随现有 Three.js 控制，不重写挖掘机驾驶。
-- 拆卸后的乐高碎块使用 dynamic rigid body，接受重力、碰撞和冲量。
+- 树、篱笆、小屋从初始状态就是多个带 collider 的乐高零件。
+- 零件之间使用 breakable links 表示结构连接。实现上可用 fixed impulse joints，或用距离/相对位移阈值模拟连接；连接断开后对应零件成为自由 dynamic body。
+- 拆毁不是“碰到后炸开”，而是挖掘机 collider 真实推挤装配体，连接超过阈值后逐步断开，零件受碰撞、重力和冲量散落。
 - 碎块 transform 每帧从 Rapier body 同步到 Three.js mesh。
-- debug 暴露 physics engine、dynamic body 数、kinematic collider 数和至少一个碎块的高度/位移，用于 E2E 验证真实物理在运行。
+- debug 暴露 physics engine、assembly body 数、active link 数、broken link 数、kinematic collider 数和至少一个零件的高度/位移，用于 E2E 验证真实物理在运行。
 
 ## 影响范围
 
@@ -42,4 +44,3 @@ v6 引入 Rapier 3D 物理：
 - [x] v6 计划已同步更新
 - [x] 追溯矩阵已同步更新
 - [ ] 相关测试已同步更新
-

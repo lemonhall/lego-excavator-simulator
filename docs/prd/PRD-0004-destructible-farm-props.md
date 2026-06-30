@@ -37,6 +37,6 @@
 ### REQ-0004-005: Rapier 物理碎块
 
 - **动机**：v5 预摆碎块缺少重力、碰撞和冲量，实际观感不可信。
-- **范围**：使用 Rapier 管理 detached 后的乐高碎块；碎块为 dynamic rigid body；地面为 fixed collider；挖掘机车身/履带/铲斗为 kinematic collider；每帧同步 rigid body transform 到 Three.js mesh。
-- **非目标**：不实现真实履带车辆动力学，不模拟每块未拆卸砖的静态连接约束，不引入复杂断裂求解。
-- **验收口径**：E2E 驾驶挖掘机撞击目标后，debug 显示 `engine: "rapier"`、`dynamicBodyCount > 0`、`kinematicColliderCount >= 2`，并且至少一个碎块的高度或世界位置在连续采样中发生变化。
+- **范围**：使用 Rapier 管理可破坏物理装配体；树、篱笆、小屋从初始状态就是多个带 collider 的乐高零件；零件之间有 breakable links；地面为 fixed collider；挖掘机车身/履带/铲斗为 kinematic collider；连接断开后零件以 dynamic rigid body 散落；每帧同步 rigid body transform 到 Three.js mesh。
+- **非目标**：不实现真实履带车辆动力学，不模拟复杂材料断裂，不要求所有未碰撞零件一开始就自由散落。
+- **验收口径**：E2E 驾驶挖掘机撞击目标后，debug 显示 `engine: "rapier"`、`assemblyBodyCount > 0`、`activeLinkCount` 下降、`brokenLinkCount > 0`、`kinematicColliderCount >= 2`，并且至少一个零件的高度或世界位置在连续采样中发生变化。

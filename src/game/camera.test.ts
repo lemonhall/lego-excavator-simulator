@@ -24,7 +24,7 @@ describe("camera rig", () => {
       mode: "driving",
       excavatorPosition: { x: 3, y: 0, z: -3 }
     });
-    state.excavator.heading = Math.PI / 2;
+    state.excavator.upperRotation = Math.PI / 2;
 
     const rig = computeCameraRig(state);
 
@@ -41,7 +41,7 @@ describe("camera rig", () => {
       mode: "driving",
       excavatorPosition: { x: 3, y: 0, z: -3 }
     });
-    state.excavator.heading = 0;
+    state.excavator.upperRotation = 0;
 
     const rig = computeCameraRig(state);
 
@@ -64,5 +64,26 @@ describe("camera rig", () => {
     expect(rig.mode).toBe("driverCab");
     expect(rig.target.x).toBeLessThan(state.excavator.position.x);
     expect(rig.position.x).toBeGreaterThan(state.excavator.position.x);
+  });
+
+  it("REQ-0003-002 keeps the driver camera independent from WASD crawler heading", () => {
+    const leftDrive = createInitialGameState({
+      mode: "driving",
+      excavatorPosition: { x: 3, y: 0, z: -3 }
+    });
+    const rightDrive = createInitialGameState({
+      mode: "driving",
+      excavatorPosition: { x: 3, y: 0, z: -3 }
+    });
+    leftDrive.excavator.crawlerHeading = -Math.PI / 2;
+    rightDrive.excavator.crawlerHeading = Math.PI / 2;
+    leftDrive.excavator.upperRotation = 0;
+    rightDrive.excavator.upperRotation = 0;
+
+    const leftRig = computeCameraRig(leftDrive);
+    const rightRig = computeCameraRig(rightDrive);
+
+    expect(rightRig.position).toEqual(leftRig.position);
+    expect(rightRig.target).toEqual(leftRig.target);
   });
 });

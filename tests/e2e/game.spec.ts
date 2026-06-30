@@ -137,4 +137,83 @@ test.describe("lego excavator game", () => {
     expect(Number(destructibleDebug?.shardCount)).toBeGreaterThan(0);
     await expect(page.getByTestId("hud")).toContainText("拆卸");
   });
+
+  test("REQ-0004-005 keeps intact tree and barn pieces stable before impact", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForTimeout(1200);
+
+    const destructibleDebug = await page.evaluate(() => window.__legoGameDebug?.destructibles as Record<string, unknown>);
+    const positions = destructibleDebug.visiblePartPositions as Record<string, number[]>;
+
+    expect(positions.treeTrunk0?.[1]).toBeCloseTo(0, 5);
+    expect(positions.treeLeaves0?.[1]).toBeCloseTo(1.55, 5);
+    expect(positions.barnBase?.[1]).toBeCloseTo(0, 5);
+    expect(Number(destructibleDebug.detachedCount)).toBe(0);
+  });
+
+  test("REQ-0004-005 breaks Rapier LEGO assemblies into moving parts", async ({ page }) => {
+    await page.goto("/");
+
+    await page.keyboard.down("KeyD");
+    await page.waitForTimeout(520);
+    await page.keyboard.up("KeyD");
+    await page.keyboard.down("KeyW");
+    await page.waitForTimeout(520);
+    await page.keyboard.up("KeyW");
+    await page.keyboard.press("KeyE");
+
+    await expect(page.getByTestId("mode")).toContainText("驾驶挖掘机");
+
+    await page.keyboard.down("KeyA");
+    await page.waitForTimeout(5000);
+    await page.keyboard.up("KeyA");
+    await page.keyboard.down("KeyS");
+    await page.waitForTimeout(3700);
+    await page.keyboard.up("KeyS");
+    await page.waitForFunction(() => {
+      const physics = window.__legoGameDebug?.physics as Record<string, unknown> | undefined;
+      return Number(physics?.assemblyBodyCount ?? 0) > 0 && Number(physics?.brokenLinkCount ?? 0) > 0;
+    });
+
+    const firstPhysics = await page.evaluate(() => window.__legoGameDebug?.physics as Record<string, unknown> | undefined);
+    await page.waitForTimeout(450);
+    const secondPhysics = await page.evaluate(() => window.__legoGameDebug?.physics as Record<string, unknown> | undefined);
+
+    expect(firstPhysics?.engine).toBe("rapier");
+    expect(Number(firstPhysics?.assemblyBodyCount)).toBeGreaterThan(0);
+    expect(Number(firstPhysics?.brokenLinkCount)).toBeGreaterThan(0);
+    expect(Number(firstPhysics?.kinematicColliderCount)).toBeGreaterThanOrEqual(2);
+    expect(secondPhysics?.movingPartSample).toBeDefined();
+    expect(secondPhysics?.movingPartSample).not.toEqual(firstPhysics?.movingPartSample);
+  });
+
+  test("REQ-0004-005 breaks the visible tree assembly when driven into tree0", async ({ page }) => {
+    await page.goto("/");
+
+    await page.evaluate(() => {
+      const debug = window.__legoGameDebug as
+        | ({ teleport?: (options: { mode: "driving"; excavatorPosition: { x: number; y: number; z: number } }) => void })
+        | undefined;
+      debug?.teleport?.({ mode: "driving", excavatorPosition: { x: -12, y: 0, z: 2.4 } });
+    });
+    await expect(page.getByTestId("mode")).toContainText("驾驶挖掘机");
+
+    await page.keyboard.down("KeyS");
+    await page.waitForTimeout(1400);
+    await page.keyboard.up("KeyS");
+    await page.waitForFunction(() => {
+      const destructibles = window.__legoGameDebug?.destructibles as Record<string, unknown> | undefined;
+      const physics = window.__legoGameDebug?.physics as Record<string, unknown> | undefined;
+      const statuses = destructibles?.statuses as Record<string, unknown> | undefined;
+      return statuses?.tree0 === "detached" && Number(physics?.brokenLinkCount ?? 0) > 0;
+    });
+
+    const destructibleDebug = await page.evaluate(() => window.__legoGameDebug?.destructibles as Record<string, unknown>);
+    const physicsDebug = await page.evaluate(() => window.__legoGameDebug?.physics as Record<string, unknown>);
+    const statuses = destructibleDebug.statuses as Record<string, unknown>;
+
+    expect(statuses.tree0).toBe("detached");
+    expect(Number(destructibleDebug.visiblePhysicsPartCount)).toBeGreaterThan(0);
+    expect(Number(physicsDebug.brokenLinkCount)).toBeGreaterThan(0);
+  });
 });

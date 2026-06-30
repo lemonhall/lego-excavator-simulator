@@ -121,12 +121,15 @@ describe("game state", () => {
 
   it("REQ-0003-002 uses the same WASD planar movement contract while driving", () => {
     const state = createInitialGameState({ mode: "driving" });
+    state.excavator.upperRotation = 0.42;
+    state.excavator.heading = 0.42;
 
     const next = updateGameState(state, { ...idleInput(), right: true }, 1);
 
     expect(next.excavator.position.x).toBeGreaterThan(state.excavator.position.x);
     expect(next.excavator.position.z).toBe(state.excavator.position.z);
-    expect(next.excavator.crawlerHeading).toBeGreaterThan(state.excavator.crawlerHeading);
+    expect(next.excavator.upperRotation).toBe(state.excavator.upperRotation);
+    expect(next.excavator.heading).toBe(state.excavator.heading);
   });
 
   it("REQ-0003-002 maps J to left slew and L to right slew", () => {
@@ -138,7 +141,7 @@ describe("game state", () => {
     expect(left.excavator.upperRotation).toBeGreaterThan(state.excavator.upperRotation);
     expect(right.excavator.upperRotation).toBeLessThan(state.excavator.upperRotation);
     expect(left.excavator.crawlerHeading).toBe(state.excavator.crawlerHeading);
-    expect(left.excavator.heading).toBe(left.excavator.crawlerHeading + left.excavator.upperRotation);
+    expect(left.excavator.heading).toBe(left.excavator.upperRotation);
   });
 
   it("REQ-0003-003 clamps boom, stick, and bucket angles inside configured limits", () => {

@@ -739,26 +739,31 @@ function createBarn(): Group {
 
   const base = createBrickPart({ name: "barnBase", color: "#b50018", studsX: 8, studsZ: 6, height: 1.25 });
   base.position.y = 0;
+  base.userData.destructiblePhysicsPart = true;
   barn.add(base);
 
   const upper = createBrickPart({ name: "barnUpper", color: "#b50018", studsX: 7, studsZ: 5, height: 0.9 });
   upper.position.y = 1.24;
+  upper.userData.destructiblePhysicsPart = true;
   barn.add(upper);
 
   const roofA = createPlatePart({ name: "barnRoofA", color: "#16283d", studsX: 9, studsZ: 3 });
   roofA.position.set(0, 2.26, -0.72);
   roofA.rotation.x = -0.22;
+  roofA.userData.destructiblePhysicsPart = true;
   barn.add(roofA);
 
   const roofB = createPlatePart({ name: "barnRoofB", color: "#16283d", studsX: 9, studsZ: 3 });
   roofB.position.set(0, 2.26, 0.72);
   roofB.rotation.x = 0.22;
+  roofB.userData.destructiblePhysicsPart = true;
   barn.add(roofB);
 
   const door = createPlatePart({ name: "barnDoor", color: "#f4efe3", studsX: 3, studsZ: 1 });
   door.rotation.x = Math.PI / 2;
   door.position.set(0, 0.56, -1.3);
   door.scale.set(1, 2.4, 1);
+  door.userData.destructiblePhysicsPart = true;
   barn.add(door);
 
   barn.scale.set(1.05, 1, 1.05);
@@ -789,6 +794,7 @@ function addFence(scene: Scene): Group[] {
     const post = createBrickPart({ name: `fencePost${i}`, color: "#8a5a32", studsX: 1, studsZ: 1, height: 0.7 });
     post.scale.set(0.5, 1, 0.5);
     post.userData.destructibleCore = true;
+    post.userData.destructiblePhysicsPart = true;
     post.userData.farmDecor = true;
     root.add(post);
     root.add(createShard(`fenceShard${i}_0`, "#8a5a32", -0.22, 0.04, 0.1));
@@ -833,6 +839,7 @@ function addTrees(scene: Scene): Group[] {
     const trunk = createBrickPart({ name: `treeTrunk${index}`, color: "#8a5a32", studsX: 1, studsZ: 1, height: 1.1 });
     trunk.scale.set(0.7, 1, 0.7);
     trunk.userData.destructibleCore = true;
+    trunk.userData.destructiblePhysicsPart = true;
     trunk.userData.farmDecor = true;
     root.add(trunk);
 
@@ -842,6 +849,7 @@ function addTrees(scene: Scene): Group[] {
     leaves.castShadow = true;
     leaves.receiveShadow = true;
     leaves.userData.destructibleCore = true;
+    leaves.userData.destructiblePhysicsPart = true;
     leaves.userData.farmDecor = true;
     markPart(leaves, "treeLeaves");
     root.add(leaves);

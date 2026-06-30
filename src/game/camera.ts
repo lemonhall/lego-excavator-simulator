@@ -57,9 +57,5 @@ function computeDriverCabRig(state: GameState): CameraRig {
 }
 
 function getDriverHeading(state: GameState): number {
-  const { crawlerHeading, upperRotation, heading } = state.excavator;
-  if (crawlerHeading === 0 && upperRotation === 0 && heading !== 0) {
-    return heading;
-  }
-  return crawlerHeading + upperRotation;
+  return state.excavator.upperRotation;
 }
