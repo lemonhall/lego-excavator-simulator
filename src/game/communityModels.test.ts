@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
-import { Box3, BoxGeometry, Group, Mesh, MeshStandardMaterial, Vector3 } from "three";
+import { Box3, BoxGeometry, BufferGeometry, Group, LineSegments, Mesh, MeshStandardMaterial, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import {
   analyzeLDrawText,
   extractTopLevelLDrawPartReferences,
   normalizeLoadedLDrawModel,
+  setCommunityModelEdgeVisibility,
   validateCommunityModelCatalog,
   type CommunityModelCatalog
 } from "./communityModels";
@@ -175,5 +176,22 @@ describe("community LDraw models", () => {
 
     expect(topWorldY).toBeGreaterThan(bottomWorldY);
     expect(new Box3().setFromObject(root).min.y).toBeCloseTo(0, 5);
+  });
+
+  it("REQ-0005-004 can hide LDraw edge lines when a model breaks apart", () => {
+    const root = new Group();
+    const edge = new LineSegments(new BufferGeometry());
+    edge.userData.communityModelEdge = true;
+    const brick = new Mesh(new BoxGeometry(2, 2, 2), new MeshStandardMaterial());
+    brick.userData.communityModelPart = true;
+    root.add(edge, brick);
+
+    setCommunityModelEdgeVisibility(root, false);
+
+    expect(edge.visible).toBe(false);
+    expect(brick.visible).toBe(true);
+
+    setCommunityModelEdgeVisibility(root, true);
+    expect(edge.visible).toBe(true);
   });
 });

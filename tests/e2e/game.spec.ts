@@ -320,8 +320,56 @@ test.describe("lego excavator game", () => {
     const detachedDebug = await page.evaluate(() => window.__legoGameDebug?.communityModels as Record<string, unknown>);
 
     expect(Object.values(detachedDebug.statuses as Record<string, unknown>)).toContain("detached");
+    expect(Number(detachedDebug.visibleEdgeCount)).toBe(0);
     expect(Number(firstPhysics.brokenLinkCount)).toBeGreaterThan(0);
     expect(secondPhysics.movingPartSample).not.toEqual(firstPhysics.movingPartSample);
+  });
+
+  test("REQ-0007-001 enters and drives spawned community vehicle models", async ({ page }) => {
+    await page.goto("/");
+
+    await page.keyboard.press("KeyB");
+    await page.getByTestId("spawn-community-model-mini-construction").click();
+    await page.getByTestId("spawn-community-model-radar-truck").click();
+
+    await page.waitForFunction(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
+      return Number(communityModels?.instanceCount ?? 0) === 2;
+    });
+
+    const firstVehiclePosition = await page.evaluate(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown>;
+      const instances = communityModels.instances as Array<{ position: number[] }>;
+      return instances[0].position;
+    });
+    await page.evaluate((position) => {
+      const debug = window.__legoGameDebug as
+        | ({ teleport?: (options: { mode: "onFoot"; playerPosition?: { x: number; y: number; z: number } }) => void })
+        | undefined;
+      debug?.teleport?.({ mode: "onFoot", playerPosition: { x: position[0], y: 0, z: position[2] + 1.2 } });
+    }, firstVehiclePosition);
+    await page.keyboard.press("KeyE");
+    await expect(page.getByTestId("mode")).toContainText("驾驶社区车辆");
+
+    const before = await page.evaluate(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown>;
+      const instances = communityModels.instances as Array<{ id: string; position: number[] }>;
+      const activeId = (window.__legoGameDebug?.controls as Record<string, unknown>).communityVehicleDriving as string;
+      return instances.find((instance) => instance.id === activeId)?.position;
+    });
+    await page.keyboard.down("KeyW");
+    await page.waitForTimeout(550);
+    await page.keyboard.up("KeyW");
+    const after = await page.evaluate(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown>;
+      const instances = communityModels.instances as Array<{ id: string; position: number[] }>;
+      const activeId = (window.__legoGameDebug?.controls as Record<string, unknown>).communityVehicleDriving as string;
+      return instances.find((instance) => instance.id === activeId)?.position;
+    });
+
+    expect(after?.[2]).toBeLessThan((before?.[2] ?? 0) - 0.8);
+    await page.keyboard.press("KeyE");
+    await expect(page.getByTestId("mode")).toContainText("步行");
   });
 
   test("REQ-0005-003 spaces and grounds three loaded LDraw community models", async ({ page }) => {
@@ -349,7 +397,7 @@ test.describe("lego excavator game", () => {
       for (let b = a + 1; b < instances.length; b += 1) {
         const dx = instances[a].position[0] - instances[b].position[0];
         const dz = instances[a].position[2] - instances[b].position[2];
-        expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(4.8);
+        expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(6.8);
       }
     }
   });

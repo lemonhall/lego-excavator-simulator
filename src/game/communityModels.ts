@@ -185,6 +185,7 @@ export function normalizeLoadedLDrawModel(object: Group, model: CommunityModelMa
   root.name = `communityModel_${instanceId}`;
   root.userData.communityModelInstanceId = instanceId;
   root.userData.communityModelId = model.id;
+  root.userData.communityModelCategory = model.category;
   root.userData.communityModelStatus = "intact";
   root.userData.sourceKind = model.sourceKind;
 
@@ -206,6 +207,14 @@ export function collectCommunityModelParts(root: Object3D): Object3D[] {
     }
   });
   return parts;
+}
+
+export function setCommunityModelEdgeVisibility(root: Object3D, visible: boolean): void {
+  root.traverse((object) => {
+    if (object.userData.communityModelEdge === true) {
+      object.visible = visible;
+    }
+  });
 }
 
 function normalizeModelCenter(root: Group): void {

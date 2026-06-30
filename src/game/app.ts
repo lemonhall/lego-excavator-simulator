@@ -19,6 +19,7 @@ import {
   loadCommunityModelCatalog,
   loadLDrawCommunityModel,
   resetCommunityPartToBase,
+  setCommunityModelEdgeVisibility,
   validateCommunityModelCatalog,
   type CommunityModelCatalog,
   type CommunityModelInstance,
@@ -55,6 +56,7 @@ declare global {
 
 interface DebugTeleportOptions {
   mode?: GameState["mode"];
+  playerPosition?: { x: number; y: number; z: number };
   excavatorPosition?: { x: number; y: number; z: number };
 }
 
@@ -73,7 +75,13 @@ const fallbackPhysicsDebug = {
 const physicsRegisteredWorlds = new WeakSet<FarmWorld>();
 const communityPhysicsBodies = new WeakMap<Object3D, PhysicsBodyHandle>();
 const communityImpulseStatuses = new WeakMap<Object3D, CommunityModelInstance["status"]>();
-const COMMUNITY_MODEL_SLOT_SPACING = 5.2;
+const COMMUNITY_MODEL_SLOT_SPACING = 7.2;
+const COMMUNITY_VEHICLE_SPEED = 4.2;
+const COMMUNITY_VEHICLE_INTERACTION_DISTANCE = 2.4;
+
+interface CommunityVehicleDriveState {
+  instanceId: string;
+}
 
 export interface CommunityModelPlacement {
   x: number;
@@ -134,6 +142,7 @@ export function mountGameApp(root: HTMLElement): GameApp {
   let modelBrowserOpen = false;
   let communityCatalog: CommunityModelCatalog | undefined;
   const communityInstances: CommunityModelInstance[] = [];
+  let communityVehicleDrive: CommunityVehicleDriveState | undefined;
   let nextCommunityInstanceId = 0;
   let modelPanelMessage = "正在加载 LDraw 模型库...";
 
@@ -201,14 +210,29 @@ export function mountGameApp(root: HTMLElement): GameApp {
       modelBrowserOpen = !modelBrowserOpen;
       renderModelPanel(modelPanel, modelBrowserOpen, communityCatalog, modelPanelMessage, spawnCommunityModel);
     }
+    const communityDriveResult = updateCommunityVehicleDrive(communityInstances, state, inputState, communityVehicleDrive, FIXED_DT);
+    communityVehicleDrive = communityDriveResult.drive;
+    if (communityDriveResult.consumeInteract) {
+      inputState.interact = false;
+    }
     state = updateGameState(state, inputState, FIXED_DT);
+    if (communityDriveResult.playerPosition) {
+      state.player.position = communityDriveResult.playerPosition;
+    }
+    state.player.visible = communityVehicleDrive === undefined && state.mode === "onFoot";
     audio.update(deriveSoundState(previousState, state));
     syncWorld(world, state, physics, communityInstances);
+    if (communityVehicleDrive) {
+      world.playerRoot.visible = false;
+    }
     syncCommunityModels(communityInstances, state, physics);
-    syncDebugState(world, state, audio, physics, communityInstances, (options) => {
+    syncDebugState(world, state, audio, physics, communityInstances, communityVehicleDrive, (options) => {
       if (options.mode) {
         state.mode = options.mode;
         state.player.visible = options.mode === "onFoot";
+      }
+      if (options.playerPosition) {
+        state.player.position = { ...options.playerPosition };
       }
       if (options.excavatorPosition) {
         state.excavator.position = { ...options.excavatorPosition };
@@ -216,7 +240,7 @@ export function mountGameApp(root: HTMLElement): GameApp {
     });
     updateCamera(camera, state);
     syncCameraFillLight(world, camera, state);
-    updateHud(hud, state, audio);
+    updateHud(hud, state, audio, communityVehicleDrive);
     renderer.render(world.scene, camera);
     animationFrame = window.requestAnimationFrame(tick);
   };
@@ -243,6 +267,7 @@ function syncDebugState(
   audio: GameAudioController,
   physics: PhysicsWorldController | undefined,
   communityInstances: CommunityModelInstance[],
+  communityVehicleDrive: CommunityVehicleDriveState | undefined,
   teleport: (options: DebugTeleportOptions) => void
 ): void {
   window.__legoGameDebug = {
@@ -255,7 +280,8 @@ function syncDebugState(
     controls: {
       pointerLocked: document.pointerLockElement !== null,
       cameraYaw: state.camera.yaw,
-      cameraPitch: state.camera.pitch
+      cameraPitch: state.camera.pitch,
+      communityVehicleDriving: communityVehicleDrive?.instanceId
     },
     physics: physics?.getDebugState() ?? fallbackPhysicsDebug,
     limbRotations: {
@@ -686,6 +712,93 @@ export function computeCommunityModelPlacement(index: number): CommunityModelPla
   };
 }
 
+export function isDrivableCommunityModel(model: Pick<CommunityModelManifestEntry, "category">): boolean {
+  return model.category.toLowerCase() === "vehicle";
+}
+
+export function computeCommunityVehicleDriveDelta(
+  input: { forward: boolean; backward: boolean; left: boolean; right: boolean },
+  yaw: number,
+  dt: number
+): { x: number; z: number; heading?: number } {
+  const strafe = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  const forwardAmount = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
+  const x = Math.sin(yaw) * forwardAmount - Math.cos(yaw) * strafe;
+  const z = Math.cos(yaw) * forwardAmount + Math.sin(yaw) * strafe;
+  const length = Math.hypot(x, z);
+  if (length === 0) {
+    return { x: 0, z: 0 };
+  }
+
+  const directionX = x / length;
+  const directionZ = z / length;
+  return {
+    x: directionX * COMMUNITY_VEHICLE_SPEED * dt,
+    z: directionZ * COMMUNITY_VEHICLE_SPEED * dt,
+    heading: Math.atan2(directionX, directionZ)
+  };
+}
+
+function updateCommunityVehicleDrive(
+  instances: CommunityModelInstance[],
+  state: GameState,
+  input: { forward: boolean; backward: boolean; left: boolean; right: boolean; interact: boolean },
+  drive: CommunityVehicleDriveState | undefined,
+  dt: number
+): { drive: CommunityVehicleDriveState | undefined; consumeInteract: boolean; playerPosition?: { x: number; y: number; z: number } } {
+  if (drive) {
+    const instance = instances.find((candidate) => candidate.id === drive.instanceId && candidate.status === "intact");
+    if (!instance) {
+      return { drive: undefined, consumeInteract: false };
+    }
+    if (input.interact) {
+      const position = instance.root.position;
+      return {
+        drive: undefined,
+        consumeInteract: true,
+        playerPosition: { x: position.x + 1.4, y: 0, z: position.z + 0.8 }
+      };
+    }
+
+    const delta = computeCommunityVehicleDriveDelta(input, state.camera.yaw, dt);
+    instance.root.position.x += delta.x;
+    instance.root.position.z += delta.z;
+    if (delta.heading !== undefined) {
+      instance.root.rotation.y = delta.heading;
+    }
+    return { drive, consumeInteract: false };
+  }
+
+  if (!input.interact || state.mode !== "onFoot") {
+    return { drive, consumeInteract: false };
+  }
+
+  const nearest = findNearestDrivableCommunityVehicle(instances, state.player.position);
+  if (!nearest) {
+    return { drive, consumeInteract: false };
+  }
+  return { drive: { instanceId: nearest.id }, consumeInteract: true };
+}
+
+function findNearestDrivableCommunityVehicle(
+  instances: CommunityModelInstance[],
+  playerPosition: { x: number; z: number }
+): CommunityModelInstance | undefined {
+  let best: CommunityModelInstance | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const instance of instances) {
+    if (instance.status !== "intact" || instance.root.userData.communityModelCategory !== "Vehicle") {
+      continue;
+    }
+    const distance = Math.hypot(instance.root.position.x - playerPosition.x, instance.root.position.z - playerPosition.z);
+    if (distance < bestDistance && distance <= COMMUNITY_VEHICLE_INTERACTION_DISTANCE) {
+      best = instance;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
 function updateCommunityModelImpactState(communityInstances: CommunityModelInstance[], state: GameState): void {
   if (state.mode !== "driving") {
     return;
@@ -714,24 +827,43 @@ function syncCommunityModels(
 ): void {
   communityInstances.forEach((instance) => {
     if (instance.status === "intact") {
+      setCommunityModelEdgeVisibility(instance.root, true);
       instance.parts.forEach(resetCommunityPartToBase);
       return;
     }
 
+    setCommunityModelEdgeVisibility(instance.root, false);
     instance.parts.forEach((part) => {
       if (physics && communityPhysicsBodies.has(part)) {
         syncCommunityPhysicsPart(part, instance, state, physics);
         return;
       }
 
-      const hash = stableNameHash(part.name);
-      part.position.x += Math.sin(hash) * 0.018;
-      part.position.y += 0.004 + (hash % 3) * 0.001;
-      part.position.z += Math.cos(hash * 1.3) * 0.018;
-      part.rotation.x += 0.025;
-      part.rotation.z += 0.018;
+      applyDetachedCommunityFallbackPose(part);
     });
   });
+}
+
+export function applyDetachedCommunityFallbackPose(part: Object3D): void {
+  const basePosition = part.userData.basePosition;
+  let baseQuaternion = part.userData.baseQuaternion;
+  if (basePosition instanceof Vector3) {
+    part.position.copy(basePosition);
+  }
+  if (!(baseQuaternion instanceof Quaternion)) {
+    baseQuaternion = part.quaternion.clone();
+    part.userData.baseQuaternion = baseQuaternion;
+  }
+  if (baseQuaternion instanceof Quaternion) {
+    part.quaternion.copy(baseQuaternion);
+  }
+
+  const hash = stableNameHash(part.name);
+  part.position.x += Math.sin(hash) * 0.62;
+  part.position.y += 0.18 + (hash % 3) * 0.04;
+  part.position.z += Math.cos(hash * 1.3) * 0.62;
+  part.rotation.x += 0.35 + (hash % 5) * 0.08;
+  part.rotation.z += Math.sin(hash * 0.7) * 0.65;
 }
 
 function syncCommunityPhysicsPart(
@@ -824,11 +956,15 @@ function registerCommunityModelPhysics(
 
 function getCommunityModelsDebug(communityInstances: CommunityModelInstance[]): Record<string, unknown> {
   let visiblePartCount = 0;
+  let visibleEdgeCount = 0;
   const instances: Record<string, unknown>[] = [];
   communityInstances.forEach((instance) => {
     instance.root.traverse((object) => {
       if (object.visible && object.userData.communityModelPart === true) {
         visiblePartCount += 1;
+      }
+      if (object.visible && object.userData.communityModelEdge === true) {
+        visibleEdgeCount += 1;
       }
     });
     const bounds = new Box3().setFromObject(instance.root);
@@ -846,6 +982,7 @@ function getCommunityModelsDebug(communityInstances: CommunityModelInstance[]): 
     modelFormat: "ldraw",
     instanceCount: communityInstances.length,
     visiblePartCount,
+    visibleEdgeCount,
     sourceKinds: [...new Set(communityInstances.map((instance) => instance.sourceKind))],
     statuses: Object.fromEntries(communityInstances.map((instance) => [instance.id, instance.status])),
     instances
@@ -977,8 +1114,13 @@ function syncCameraFillLight(world: FarmWorld, camera: PerspectiveCamera, state:
   light.target.updateMatrixWorld();
 }
 
-function updateHud(hud: HTMLElement, state: GameState, audio: GameAudioController): void {
-  const modeLabel = state.mode === "driving" ? "驾驶挖掘机" : "步行";
+function updateHud(
+  hud: HTMLElement,
+  state: GameState,
+  audio: GameAudioController,
+  communityVehicleDrive: CommunityVehicleDriveState | undefined
+): void {
+  const modeLabel = communityVehicleDrive ? "驾驶社区车辆" : state.mode === "driving" ? "驾驶挖掘机" : "步行";
   const cameraLabel = state.mode === "driving" ? "驾驶室视角" : "第三人称过肩";
   const audioLabel = audio.getDebugState().enabled === true ? "已启用" : "按任意控制键启用";
   const detachedCount = state.destructibles.filter((target) => target.status === "detached").length;

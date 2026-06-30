@@ -1,5 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { computeCommunityModelPlacement } from "./app";
+import { Mesh, BoxGeometry, MeshStandardMaterial, Vector3 } from "three";
+import {
+  applyDetachedCommunityFallbackPose,
+  computeCommunityModelPlacement,
+  computeCommunityVehicleDriveDelta,
+  isDrivableCommunityModel
+} from "./app";
+import type { CommunityModelManifestEntry } from "./communityModels";
+import type { GameInput } from "./state";
+
+const idleInput = (): GameInput => ({
+  forward: false,
+  backward: false,
+  left: false,
+  right: false,
+  jump: false,
+  interact: false,
+  boomUp: false,
+  boomDown: false,
+  upperLeft: false,
+  upperRight: false,
+  stickIn: false,
+  stickOut: false,
+  bucketCurl: false,
+  bucketDump: false,
+  toggleModelBrowser: false,
+  lookDeltaX: 0,
+  lookDeltaY: 0
+});
 
 describe("community model placement", () => {
   it("REQ-0005-003 spaces the first three spawned models far enough apart", () => {
@@ -9,8 +37,45 @@ describe("community model placement", () => {
       for (let b = a + 1; b < placements.length; b += 1) {
         const dx = placements[a].x - placements[b].x;
         const dz = placements[a].z - placements[b].z;
-        expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(4.8);
+        expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(6.8);
       }
     }
+  });
+
+  it("REQ-0005-004 keeps fallback detached community part poses stable across frames", () => {
+    const part = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
+    part.name = "communityFallbackPart";
+    part.userData.basePosition = new Vector3(1, 0, 2);
+
+    applyDetachedCommunityFallbackPose(part);
+    const firstPosition = part.position.clone();
+    const firstRotationX = part.rotation.x;
+
+    part.position.set(10, 10, 10);
+    part.rotation.x = 3;
+    applyDetachedCommunityFallbackPose(part);
+
+    expect(part.position.toArray()).toEqual(firstPosition.toArray());
+    expect(part.rotation.x).toBe(firstRotationX);
+  });
+
+  it("REQ-0007-001 drives community vehicles along the FPS camera yaw", () => {
+    const delta = computeCommunityVehicleDriveDelta({ ...idleInput(), forward: true }, Math.PI / 2, 1);
+
+    expect(delta.x).toBeGreaterThan(2);
+    expect(Math.abs(delta.z)).toBeLessThan(0.01);
+    expect(delta.heading).toBeCloseTo(Math.PI / 2, 5);
+  });
+
+  it("REQ-0007-001 treats only community vehicle catalog entries as drivable", () => {
+    const model = {
+      category: "Vehicle"
+    } as CommunityModelManifestEntry;
+    const building = {
+      category: "Building"
+    } as CommunityModelManifestEntry;
+
+    expect(isDrivableCommunityModel(model)).toBe(true);
+    expect(isDrivableCommunityModel(building)).toBe(false);
   });
 });

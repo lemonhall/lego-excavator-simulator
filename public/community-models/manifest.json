@@ -24,7 +24,7 @@
       "sourceUrl": "https://github.com/mrdoob/three.js/blob/dev/examples/models/ldraw/officialLibrary/models/30023-1-Lighthouse.ldr_Packed.mpd",
       "license": "Three.js MIT; embedded LDraw parts under their declared LDraw/CCAL terms",
       "attribution": "three.js examples and LDraw.org contributors",
-      "recommendedScale": 0.018,
+      "recommendedScale": 0.026,
       "thumbnailColor": "#ef4444"
     },
     {
