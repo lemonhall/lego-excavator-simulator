@@ -25,11 +25,17 @@ const idleInput = (): GameInput => ({
   bucketCurl: false,
   bucketDump: false,
   toggleModelBrowser: false,
+  fire: false,
   lookDeltaX: 0,
   lookDeltaY: 0
 });
 
 describe("game state", () => {
+  it("REQ-0006-001 expands the playable box arena for shooter traversal", () => {
+    expect(WORLD_BOUNDS.maxX - WORLD_BOUNDS.minX).toBeGreaterThanOrEqual(300);
+    expect(WORLD_BOUNDS.maxZ - WORLD_BOUNDS.minZ).toBeGreaterThanOrEqual(300);
+  });
+
   it("REQ-0001-002 moves the on-foot player forward", () => {
     const state = createInitialGameState();
     const next = updateGameState(state, { ...idleInput(), forward: true }, 1);

@@ -4,6 +4,7 @@ export class KeyboardInput {
   private readonly pressed = new Set<string>();
   private interactLatch = false;
   private modelBrowserLatch = false;
+  private fireHeld = false;
   private lookDeltaX = 0;
   private lookDeltaY = 0;
 
@@ -57,6 +58,19 @@ export class KeyboardInput {
       }
     });
 
+    pointerTarget?.addEventListener("mousedown", (event) => {
+      if (event.button === 0) {
+        this.fireHeld = true;
+        event.preventDefault();
+      }
+    });
+
+    target.addEventListener("mouseup", (event) => {
+      if (event.button === 0) {
+        this.fireHeld = false;
+      }
+    });
+
     pointerTarget?.addEventListener("contextmenu", (event) => {
       event.preventDefault();
     });
@@ -79,6 +93,7 @@ export class KeyboardInput {
       bucketCurl: this.pressed.has("KeyY"),
       bucketDump: this.pressed.has("KeyH"),
       toggleModelBrowser: this.modelBrowserLatch,
+      fire: this.fireHeld,
       lookDeltaX: this.lookDeltaX,
       lookDeltaY: this.lookDeltaY
     };

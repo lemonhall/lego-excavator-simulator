@@ -71,7 +71,7 @@ export function createFarmWorld(): FarmWorld {
   const scene = new Scene();
   scene.background = new Color("#8fd0ff");
   scene.environment = new Texture();
-  scene.fog = new Fog("#8fd0ff", 30, 82);
+  scene.fog = new Fog("#8fd0ff", 120, 520);
 
   const ambient = new AmbientLight("#dbeafe", 0.92);
   ambient.name = "plasticAmbientLight";
@@ -87,14 +87,14 @@ export function createFarmWorld(): FarmWorld {
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 45;
-  sun.shadow.camera.left = -18;
-  sun.shadow.camera.right = 18;
-  sun.shadow.camera.top = 18;
-  sun.shadow.camera.bottom = -18;
+  sun.shadow.camera.far = 380;
+  sun.shadow.camera.left = -190;
+  sun.shadow.camera.right = 190;
+  sun.shadow.camera.top = 190;
+  sun.shadow.camera.bottom = -190;
   scene.add(sun);
 
-  const toyFill = new PointLight("#fff1b8", 46, 26, 1.8);
+  const toyFill = new PointLight("#fff1b8", 86, 92, 1.8);
   toyFill.name = "plasticHighlightLight";
   toyFill.position.set(-5, 5, 6);
   scene.add(toyFill);
@@ -106,7 +106,7 @@ export function createFarmWorld(): FarmWorld {
   scene.add(cameraFill);
   scene.add(cameraFill.target);
 
-  const ground = createRoundedPanel("ground", 42, 0.25, 42, plastic.grass);
+  const ground = createRoundedPanel("ground", 380, 0.25, 380, plastic.grass);
   ground.position.y = -0.15;
   scene.add(ground);
 
@@ -204,6 +204,7 @@ function createPlayer(): Group {
   const rightArm = createArm("playerRightArm");
   rightArm.position.set(0.5, 1.3, 0);
   fallback.add(rightArm);
+  rightArm.add(createPlayerGatlingGun());
 
   const head = new Mesh(new CylinderGeometry(0.24, 0.24, 0.36, 32), plastic.yellow);
   head.name = "playerHead";
@@ -466,6 +467,65 @@ function createArm(name: string): Group {
   pivot.add(legacyHandTag);
 
   return pivot;
+}
+
+function createPlayerGatlingGun(): Group {
+  const gun = new Group();
+  gun.name = "playerGatlingGun";
+  gun.position.set(0.12, -0.62, -0.28);
+  gun.rotation.set(-0.1, 0, -0.18);
+  gun.userData.weaponKind = "gatling";
+  gun.userData.assetSource = "BrickLink Studio/Rebrickable minifig-scale minigun inspiration; local brick-built fallback";
+  markPart(gun, "playerWeapon");
+
+  const receiver = createRoundedPanel("playerGatlingReceiver", 0.28, 0.2, 0.36, plastic.black);
+  receiver.position.set(0, 0, -0.02);
+  gun.add(receiver);
+
+  const grip = createRoundedPanel("playerGatlingGrip", 0.09, 0.28, 0.11, plastic.black);
+  grip.position.set(0, -0.22, 0.1);
+  grip.rotation.x = -0.35;
+  gun.add(grip);
+
+  const rearCap = new Mesh(new CylinderGeometry(0.15, 0.15, 0.1, 24), plastic.black);
+  rearCap.name = "playerGatlingRearCap";
+  rearCap.rotation.x = Math.PI / 2;
+  rearCap.position.set(0, 0, 0.2);
+  rearCap.castShadow = true;
+  rearCap.receiveShadow = true;
+  rearCap.userData.materialKind = "legoPlastic";
+  markPart(rearCap, "weaponReceiver");
+  gun.add(rearCap);
+
+  for (let i = 0; i < 6; i += 1) {
+    const angle = (Math.PI * 2 * i) / 6;
+    const barrel = new Mesh(new CylinderGeometry(0.026, 0.026, 0.62, 16), plastic.black);
+    barrel.name = `playerGatlingBarrel${i}`;
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(Math.cos(angle) * 0.075, Math.sin(angle) * 0.075, -0.42);
+    barrel.castShadow = true;
+    barrel.receiveShadow = true;
+    barrel.userData.materialKind = "legoPlastic";
+    markPart(barrel, "weaponBarrel");
+    gun.add(barrel);
+  }
+
+  const barrelRing = new Mesh(new CylinderGeometry(0.13, 0.13, 0.05, 24), plastic.black);
+  barrelRing.name = "playerGatlingBarrelRing";
+  barrelRing.rotation.x = Math.PI / 2;
+  barrelRing.position.set(0, 0, -0.68);
+  barrelRing.castShadow = true;
+  barrelRing.receiveShadow = true;
+  barrelRing.userData.materialKind = "legoPlastic";
+  markPart(barrelRing, "weaponBarrelRing");
+  gun.add(barrelRing);
+
+  const muzzle = new Object3D();
+  muzzle.name = "playerWeaponMuzzle";
+  muzzle.position.set(0, 0, -0.78);
+  gun.add(muzzle);
+
+  return gun;
 }
 
 function createClawHand(name: string, side: number): Group {

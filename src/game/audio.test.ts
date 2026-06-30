@@ -18,6 +18,7 @@ const idleInput = (): GameInput => ({
   bucketCurl: false,
   bucketDump: false,
   toggleModelBrowser: false,
+  fire: false,
   lookDeltaX: 0,
   lookDeltaY: 0
 });

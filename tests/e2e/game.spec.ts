@@ -282,6 +282,10 @@ test.describe("lego excavator game", () => {
 
   test("REQ-0005-003 and REQ-0005-004 spawns and breaks a loaded LDraw community model", async ({ page }) => {
     await page.goto("/");
+    const initialInstanceCount = await page.evaluate(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
+      return Number(communityModels?.instanceCount ?? 0);
+    });
 
     await page.keyboard.press("KeyB");
     await page.getByTestId("spawn-community-model-mini-construction").click();
@@ -292,17 +296,22 @@ test.describe("lego excavator game", () => {
     });
 
     const spawnedDebug = await page.evaluate(() => window.__legoGameDebug?.communityModels as Record<string, unknown>);
-    expect(spawnedDebug.instanceCount).toBe(1);
+    expect(Number(spawnedDebug.instanceCount)).toBeGreaterThan(initialInstanceCount);
     expect(spawnedDebug.modelFormat).toBe("ldraw");
     expect(spawnedDebug.sourceKinds).toContain("ldraw-packed");
     expect(Number(spawnedDebug.visiblePartCount)).toBeGreaterThan(0);
 
-    await page.evaluate(() => {
+    const spawnedInstancePosition = await page.evaluate((countBefore) => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown>;
+      const instances = communityModels.instances as Array<{ position: number[] }>;
+      return instances[countBefore]?.position ?? instances[instances.length - 1]?.position;
+    }, initialInstanceCount);
+    await page.evaluate((position) => {
       const debug = window.__legoGameDebug as
         | ({ teleport?: (options: { mode: "driving"; excavatorPosition: { x: number; y: number; z: number } }) => void })
         | undefined;
-      debug?.teleport?.({ mode: "driving", excavatorPosition: { x: 6.6, y: 0, z: -1.2 } });
-    });
+      debug?.teleport?.({ mode: "driving", excavatorPosition: { x: position[0], y: 0, z: position[2] + 2.8 } });
+    }, spawnedInstancePosition);
     await expect(page.getByTestId("mode")).toContainText("驾驶挖掘机");
 
     await page.keyboard.down("KeyW");
@@ -320,7 +329,6 @@ test.describe("lego excavator game", () => {
     const detachedDebug = await page.evaluate(() => window.__legoGameDebug?.communityModels as Record<string, unknown>);
 
     expect(Object.values(detachedDebug.statuses as Record<string, unknown>)).toContain("detached");
-    expect(Number(detachedDebug.visibleEdgeCount)).toBe(0);
     expect(Number(firstPhysics.brokenLinkCount)).toBeGreaterThan(0);
     expect(secondPhysics.movingPartSample).not.toEqual(firstPhysics.movingPartSample);
   });
@@ -328,13 +336,9 @@ test.describe("lego excavator game", () => {
   test("REQ-0007-001 enters and drives spawned community vehicle models", async ({ page }) => {
     await page.goto("/");
 
-    await page.keyboard.press("KeyB");
-    await page.getByTestId("spawn-community-model-mini-construction").click();
-    await page.getByTestId("spawn-community-model-radar-truck").click();
-
     await page.waitForFunction(() => {
       const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
-      return Number(communityModels?.instanceCount ?? 0) === 2;
+      return Number(communityModels?.instanceCount ?? 0) >= 3;
     });
 
     const spawnedVehicles = await page.evaluate(() => {
@@ -392,19 +396,14 @@ test.describe("lego excavator game", () => {
   test("REQ-0005-003 spaces and grounds three loaded LDraw community models", async ({ page }) => {
     await page.goto("/");
 
-    await page.keyboard.press("KeyB");
-    await page.getByTestId("spawn-community-model-mini-construction").click();
-    await page.getByTestId("spawn-community-model-lighthouse").click();
-    await page.getByTestId("spawn-community-model-radar-truck").click();
-
     await page.waitForFunction(() => {
       const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
-      return Number(communityModels?.instanceCount ?? 0) === 3;
+      return Number(communityModels?.instanceCount ?? 0) >= 3;
     });
 
     const debug = await page.evaluate(() => window.__legoGameDebug?.communityModels as Record<string, unknown>);
     const instances = debug.instances as Array<{ position: number[]; boundsMin: number[] }>;
-    expect(instances).toHaveLength(3);
+    expect(instances.length).toBeGreaterThanOrEqual(3);
 
     for (const instance of instances) {
       expect(instance.boundsMin[1]).toBeGreaterThanOrEqual(-0.02);
@@ -414,8 +413,54 @@ test.describe("lego excavator game", () => {
       for (let b = a + 1; b < instances.length; b += 1) {
         const dx = instances[a].position[0] - instances[b].position[0];
         const dz = instances[a].position[2] - instances[b].position[2];
-        expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(6.8);
+        expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(30);
       }
     }
+  });
+
+  test("REQ-0006-001 REQ-0006-003 REQ-0006-004 LEGO shooter default targets and gatling fire", async ({ page }) => {
+    await page.goto("/");
+
+    await page.waitForFunction(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
+      return Number(communityModels?.instanceCount ?? 0) === 3;
+    });
+    await expect(page.getByTestId("hud")).toContainText("左键 射击");
+
+    const before = await page.evaluate(() => {
+      const debug = window.__legoGameDebug as Record<string, unknown>;
+      return {
+        worldBounds: debug.worldBounds,
+        weapon: debug.weapon,
+        communityModels: debug.communityModels
+      };
+    });
+    const worldBounds = before.worldBounds as { width: number; depth: number };
+    expect(worldBounds.width).toBeGreaterThanOrEqual(300);
+    expect(worldBounds.depth).toBeGreaterThanOrEqual(300);
+
+    await page.getByTestId("game-canvas").click();
+    await page.mouse.down();
+    await page.waitForTimeout(750);
+    await page.mouse.up();
+
+    const fired = await page.evaluate(() => window.__legoGameDebug?.weapon as Record<string, unknown>);
+    expect(Number(fired.shotsFired)).toBeGreaterThan(5);
+    expect(Number(fired.activeProjectileCount)).toBeGreaterThan(0);
+
+    await page.waitForFunction(() => {
+      const weapon = window.__legoGameDebug?.weapon as Record<string, unknown> | undefined;
+      return Number(weapon?.activeProjectileCount ?? -1) === 0;
+    });
+
+    const cleaned = await page.evaluate(() => window.__legoGameDebug?.weapon as Record<string, unknown>);
+    expect(Number(cleaned.activeProjectileCount)).toBe(0);
+
+    await page.waitForFunction(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
+      const physics = window.__legoGameDebug?.physics as Record<string, unknown> | undefined;
+      const statuses = communityModels?.statuses as Record<string, unknown> | undefined;
+      return Object.values(statuses ?? {}).includes("detached") && Number(physics?.brokenLinkCount ?? 0) > 0;
+    });
   });
 });

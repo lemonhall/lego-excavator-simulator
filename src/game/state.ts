@@ -22,6 +22,7 @@ export interface GameInput {
   bucketCurl: boolean;
   bucketDump: boolean;
   toggleModelBrowser: boolean;
+  fire: boolean;
   lookDeltaX: number;
   lookDeltaY: number;
 }
@@ -79,10 +80,10 @@ export interface InitialGameStateOptions {
 }
 
 export const WORLD_BOUNDS = {
-  minX: -18,
-  maxX: 18,
-  minZ: -18,
-  maxZ: 18
+  minX: -180,
+  maxX: 180,
+  minZ: -180,
+  maxZ: 180
 } as const;
 
 export const BOOM_LIMITS = {

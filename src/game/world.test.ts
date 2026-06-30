@@ -69,6 +69,17 @@ describe("farm world", () => {
     expect(world.playerRoot.getObjectByName("playerRightLegBlock")?.userData.colorRole).toBe("orangePants");
   });
 
+  it("REQ-0006-002 mounts a LEGO gatling gun and muzzle on the player", () => {
+    const world = createFarmWorld();
+    const gun = world.playerRoot.getObjectByName("playerGatlingGun");
+    const muzzle = world.playerRoot.getObjectByName("playerWeaponMuzzle");
+
+    expect(gun).toBeDefined();
+    expect(muzzle).toBeDefined();
+    expect(gun?.userData.weaponKind).toBe("gatling");
+    expect(gun?.userData.assetSource).toContain("BrickLink");
+  });
+
   it("REQ-0002-004 includes official construction minifigure print details", () => {
     const world = createFarmWorld();
 

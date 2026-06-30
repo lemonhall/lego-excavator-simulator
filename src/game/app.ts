@@ -7,7 +7,9 @@ import {
   Object3D,
   PCFSoftShadowMap,
   PerspectiveCamera,
+  PointLight,
   Quaternion,
+  SphereGeometry,
   SpotLight,
   Vector3,
   WebGLRenderer
@@ -30,6 +32,7 @@ import { KeyboardInput } from "./input";
 import { loadOfficialWorkerModel } from "./officialWorkerModel";
 import { createPhysicsWorldController, type PhysicsBodyHandle, type PhysicsWorldController } from "./physics";
 import { createInitialGameState, updateGameState, type DestructibleState, type GameState } from "./state";
+import { createWeaponSystem, type ShooterTarget, type WeaponSystem } from "./weapon";
 import { createFarmWorld, type FarmWorld } from "./world";
 
 export interface GameApp {
@@ -50,6 +53,8 @@ declare global {
       audio?: Record<string, unknown>;
       communityModels?: Record<string, unknown>;
       controls?: Record<string, unknown>;
+      weapon?: Record<string, unknown>;
+      worldBounds?: Record<string, unknown>;
       teleport?: (options: DebugTeleportOptions) => void;
     };
   }
@@ -76,10 +81,12 @@ const fallbackPhysicsDebug = {
 const physicsRegisteredWorlds = new WeakSet<FarmWorld>();
 const communityPhysicsBodies = new WeakMap<Object3D, PhysicsBodyHandle>();
 const communityImpulseStatuses = new WeakMap<Object3D, CommunityModelInstance["status"]>();
-const COMMUNITY_MODEL_SLOT_SPACING = 7.2;
+const COMMUNITY_MODEL_SLOT_SPACING = 34;
 const COMMUNITY_VEHICLE_SPEED = 4.2;
 const COMMUNITY_VEHICLE_INTERACTION_DISTANCE = 2.4;
 const COMMUNITY_WHEEL_SPIN_PER_METER = 7.5;
+const DEFAULT_COMMUNITY_TARGET_HEALTH = 4;
+const FARM_TARGET_HEALTH = 3;
 
 interface CommunityVehicleDriveState {
   instanceId: string;
@@ -123,9 +130,16 @@ export function mountGameApp(root: HTMLElement): GameApp {
   void loadOfficialWorkerModel(world).catch((error: unknown) => {
     console.warn("Failed to load official worker model; using procedural fallback.", error);
   });
-  const camera = new PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 120);
+  const camera = new PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 520);
   const input = new KeyboardInput(window, renderer.domElement);
   const audio = new GameAudioController();
+  const weapon = createWeaponSystem({ fireRatePerSecond: 18, projectileLifetime: 0.85, projectileSpeed: 48, damage: 1 });
+  const projectileRoot = new Group();
+  projectileRoot.name = "projectileRoot";
+  world.scene.add(projectileRoot);
+  const muzzleFlash = new PointLight("#ffd166", 0, 5.5, 1.5);
+  muzzleFlash.name = "gatlingMuzzleFlash";
+  world.scene.add(muzzleFlash);
   let physics: PhysicsWorldController | undefined;
   void createPhysicsWorldController()
     .then((controller) => {
@@ -144,6 +158,7 @@ export function mountGameApp(root: HTMLElement): GameApp {
   let modelBrowserOpen = false;
   let communityCatalog: CommunityModelCatalog | undefined;
   const communityInstances: CommunityModelInstance[] = [];
+  const autoSpawnedCommunityModelIds = new Set<string>();
   let communityVehicleDrive: CommunityVehicleDriveState | undefined;
   let nextCommunityInstanceId = 0;
   let modelPanelMessage = "正在加载 LDraw 模型库...";
@@ -171,6 +186,7 @@ export function mountGameApp(root: HTMLElement): GameApp {
       }
       communityCatalog = catalog;
       modelPanelMessage = "";
+      spawnDefaultCommunityTargets(catalog, spawnCommunityModel, autoSpawnedCommunityModelIds);
       renderModelPanel(modelPanel, modelBrowserOpen, communityCatalog, modelPanelMessage, spawnCommunityModel);
     })
     .catch((error: unknown) => {
@@ -227,6 +243,7 @@ export function mountGameApp(root: HTMLElement): GameApp {
     if (communityVehicleDrive) {
       world.playerRoot.visible = false;
     }
+    updateWeaponSystem(world, camera, weapon, projectileRoot, muzzleFlash, inputState.fire && state.mode === "onFoot", communityInstances, state);
     syncCommunityModels(communityInstances, state, physics);
     if (communityVehicleDrive) {
       const drivenInstance = communityInstances.find((instance) => instance.id === communityVehicleDrive?.instanceId);
@@ -234,7 +251,7 @@ export function mountGameApp(root: HTMLElement): GameApp {
         animateCommunityVehicleWheels(drivenInstance, communityDriveResult.travelDistance);
       }
     }
-    syncDebugState(world, state, audio, physics, communityInstances, communityVehicleDrive, (options) => {
+    syncDebugState(world, state, audio, physics, communityInstances, communityVehicleDrive, weapon, (options) => {
       if (options.mode) {
         state.mode = options.mode;
         state.player.visible = options.mode === "onFoot";
@@ -276,6 +293,7 @@ function syncDebugState(
   physics: PhysicsWorldController | undefined,
   communityInstances: CommunityModelInstance[],
   communityVehicleDrive: CommunityVehicleDriveState | undefined,
+  weapon: WeaponSystem,
   teleport: (options: DebugTeleportOptions) => void
 ): void {
   window.__legoGameDebug = {
@@ -285,6 +303,11 @@ function syncDebugState(
     excavator: getExcavatorDebug(world, state),
     destructibles: getDestructibleDebug(world, state),
     communityModels: getCommunityModelsDebug(communityInstances, communityVehicleDrive?.instanceId),
+    weapon: getWeaponAppDebug(world, weapon),
+    worldBounds: {
+      width: 360,
+      depth: 360
+    },
     controls: {
       pointerLocked: document.pointerLockElement !== null,
       cameraYaw: state.camera.yaw,
@@ -652,6 +675,145 @@ function syncPhysicsPart(object: Object3D, target: DestructibleState, physics: P
   object.quaternion.copy(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w));
 }
 
+function updateWeaponSystem(
+  world: FarmWorld,
+  camera: PerspectiveCamera,
+  weapon: WeaponSystem,
+  projectileRoot: Group,
+  muzzleFlash: PointLight,
+  firing: boolean,
+  communityInstances: CommunityModelInstance[],
+  state: GameState
+): void {
+  const muzzle = world.playerRoot.getObjectByName("playerWeaponMuzzle");
+  const origin = muzzle ? muzzle.getWorldPosition(new Vector3()) : world.playerRoot.position.clone().add(new Vector3(0, 1.2, -0.4));
+  const direction = camera.getWorldDirection(new Vector3()).normalize();
+  const targets = collectShooterTargets(state, communityInstances);
+  const result = weapon.update({
+    dt: FIXED_DT,
+    firing,
+    origin,
+    direction,
+    targets
+  });
+
+  for (const hit of result.hits) {
+    applyShooterHit(hit.targetId, hit.damage, state, communityInstances);
+  }
+  syncProjectileVisuals(projectileRoot, weapon);
+  muzzleFlash.position.copy(origin);
+  muzzleFlash.intensity = weapon.getDebugState().muzzleFlashVisible ? 72 : 0;
+}
+
+function collectShooterTargets(state: GameState, communityInstances: CommunityModelInstance[]): ShooterTarget[] {
+  const targets: ShooterTarget[] = [];
+  for (const target of state.destructibles) {
+    if (target.status === "detached") {
+      continue;
+    }
+    targets.push({
+      id: `farm:${target.id}`,
+      center: new Vector3(target.position.x, 0.8, target.position.z),
+      radius: target.hitRadius + 0.55,
+      health: target.integrity * FARM_TARGET_HEALTH
+    });
+  }
+
+  for (const instance of communityInstances) {
+    if (instance.status === "detached") {
+      continue;
+    }
+    const bounds = new Box3().setFromObject(instance.root);
+    if (bounds.isEmpty()) {
+      continue;
+    }
+    const center = bounds.getCenter(new Vector3());
+    const size = bounds.getSize(new Vector3());
+    targets.push({
+      id: `community:${instance.id}`,
+      center,
+      radius: Math.max(0.85, Math.min(3.6, Math.max(size.x, size.y, size.z) * 0.55)),
+      health: getCommunityTargetHealth(instance)
+    });
+  }
+  return targets;
+}
+
+function applyShooterHit(targetId: string, damage: number, state: GameState, communityInstances: CommunityModelInstance[]): void {
+  if (targetId.startsWith("community:")) {
+    const id = targetId.slice("community:".length);
+    const instance = communityInstances.find((candidate) => candidate.id === id);
+    if (!instance || instance.status === "detached") {
+      return;
+    }
+    const health = Math.max(0, getCommunityTargetHealth(instance) - damage);
+    instance.root.userData.shooterHealth = health;
+    if (health === 0) {
+      instance.status = "detached";
+      instance.root.userData.communityModelStatus = "detached";
+    }
+    return;
+  }
+
+  if (targetId.startsWith("farm:")) {
+    const id = targetId.slice("farm:".length);
+    state.destructibles = state.destructibles.map((target) => {
+      if (target.id !== id || target.status === "detached") {
+        return target;
+      }
+      const nextIntegrity = Math.max(0, target.integrity - damage);
+      return {
+        ...target,
+        integrity: nextIntegrity,
+        status: nextIntegrity === 0 ? "detached" : "damaged"
+      };
+    });
+  }
+}
+
+function syncProjectileVisuals(projectileRoot: Group, weapon: WeaponSystem): void {
+  const projectiles = weapon.getProjectiles();
+  while (projectileRoot.children.length > projectiles.length) {
+    const child = projectileRoot.children.pop();
+    if (child instanceof Mesh) {
+      child.geometry.dispose();
+    }
+  }
+  projectiles.forEach((projectile, index) => {
+    let mesh = projectileRoot.children[index];
+    if (!(mesh instanceof Mesh)) {
+      mesh = new Mesh(new SphereGeometry(0.07, 10, 8), new MeshPhysicalMaterial({
+        color: "#ffdd55",
+        emissive: "#ff9f1c",
+        emissiveIntensity: 1.9,
+        roughness: 0.2,
+        metalness: 0.05
+      }));
+      mesh.name = `gatlingProjectile${index}`;
+      mesh.userData.projectileVisual = true;
+      projectileRoot.add(mesh);
+    }
+    mesh.position.copy(projectile.position);
+  });
+}
+
+function getCommunityTargetHealth(instance: CommunityModelInstance): number {
+  if (typeof instance.root.userData.shooterHealth !== "number") {
+    instance.root.userData.shooterHealth = DEFAULT_COMMUNITY_TARGET_HEALTH;
+  }
+  return instance.root.userData.shooterHealth;
+}
+
+function getWeaponAppDebug(world: FarmWorld, weapon: WeaponSystem): Record<string, unknown> {
+  const debug = weapon.getDebugState();
+  return {
+    ...debug,
+    hasGatlingGun: world.playerRoot.getObjectByName("playerGatlingGun") !== undefined,
+    hasMuzzle: world.playerRoot.getObjectByName("playerWeaponMuzzle") !== undefined,
+    assetSource: world.playerRoot.getObjectByName("playerGatlingGun")?.userData.assetSource
+  };
+}
+
 function renderModelPanel(
   panel: HTMLElement,
   open: boolean,
@@ -703,6 +865,20 @@ function renderModelPanel(
   });
 }
 
+function spawnDefaultCommunityTargets(
+  catalog: CommunityModelCatalog,
+  spawnCommunityModel: (model: CommunityModelManifestEntry) => void,
+  spawnedIds: Set<string>
+): void {
+  for (const model of catalog.models) {
+    if (spawnedIds.has(model.id)) {
+      continue;
+    }
+    spawnedIds.add(model.id);
+    spawnCommunityModel(model);
+  }
+}
+
 function positionCommunityInstance(root: Group, index: number): void {
   const placement = computeCommunityModelPlacement(index);
   root.position.set(placement.x, 0, placement.z);
@@ -710,12 +886,11 @@ function positionCommunityInstance(root: Group, index: number): void {
 }
 
 export function computeCommunityModelPlacement(index: number): CommunityModelPlacement {
-  const column = index % 2;
-  const row = Math.floor(index / 2);
   const yawPattern = [0, Math.PI * 0.08, -Math.PI * 0.08, Math.PI * 0.16];
+  const xPattern = [0, -18, 20, -34, 36];
   return {
-    x: 6.6 + column * COMMUNITY_MODEL_SLOT_SPACING,
-    z: -4.6 - row * COMMUNITY_MODEL_SLOT_SPACING,
+    x: xPattern[index % xPattern.length] ?? 0,
+    z: -26 - index * COMMUNITY_MODEL_SLOT_SPACING,
     yaw: yawPattern[index % yawPattern.length] ?? 0
   };
 }
@@ -1027,6 +1202,7 @@ function getCommunityModelsDebug(
       id: instance.id,
       modelId: instance.modelId,
       status: instance.status,
+      health: getCommunityTargetHealth(instance),
       position: instance.root.position.toArray(),
       boundsMin: bounds.min.toArray(),
       boundsMax: bounds.max.toArray(),
@@ -1188,7 +1364,7 @@ function updateHud(
     <div class="hud-title">LEGO EXCAVATOR FARM</div>
     <div data-testid="mode">状态：${modeLabel}</div>
     <div data-testid="camera-mode">镜头：${cameraLabel}</div>
-    <div>点击画面锁定鼠标 | WASD 行走/开车 | 空格 跳跃 | E 上车/下车 | B 模型库 | J/L 上车回转 | U/O 大臂 | N/M 小臂 | Y/H 铲斗</div>
+    <div>点击画面锁定鼠标 | 左键 射击 | WASD 行走/开车 | 空格 跳跃 | E 上车/下车 | B 模型库 | J/L 上车回转 | U/O 大臂 | N/M 小臂 | Y/H 铲斗</div>
     <div>拆卸：${detachedCount} 已拆 / ${damagedCount} 受损</div>
     <div data-testid="audio-mode">声音：${audioLabel}</div>
   `;
