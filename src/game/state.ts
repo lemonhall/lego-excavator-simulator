@@ -22,6 +22,13 @@ export interface GameInput {
   bucketCurl: boolean;
   bucketDump: boolean;
   toggleModelBrowser: boolean;
+  lookDeltaX: number;
+  lookDeltaY: number;
+}
+
+export interface CameraLookState {
+  yaw: number;
+  pitch: number;
 }
 
 export interface PlayerState {
@@ -61,6 +68,7 @@ export interface GameState {
   mode: GameMode;
   player: PlayerState;
   excavator: ExcavatorState;
+  camera: CameraLookState;
   destructibles: DestructibleState[];
 }
 
@@ -103,6 +111,8 @@ const UPPER_SLEW_SPEED = 1.45;
 const INTERACTION_DISTANCE = 2.2;
 const BODY_IMPACT_RADIUS = 1.35;
 const BUCKET_IMPACT_RADIUS = 0.72;
+const MOUSE_LOOK_SENSITIVITY = 0.0032;
+const CAMERA_PITCH_LIMIT = 1.2;
 
 const DEFAULT_DESTRUCTIBLES: DestructibleState[] = [
   { id: "barn", kind: "barn", position: { x: -9, y: 0, z: -8 }, hitRadius: 2.35, maxIntegrity: 3, integrity: 3, status: "intact" },
@@ -148,6 +158,10 @@ export function createInitialGameState(options: InitialGameStateOptions = {}): G
       stickAngle: -0.35,
       bucketAngle: -0.2
     },
+    camera: {
+      yaw: Math.PI,
+      pitch: 0
+    },
     destructibles: DEFAULT_DESTRUCTIBLES.map(cloneDestructible)
   };
 }
@@ -155,6 +169,7 @@ export function createInitialGameState(options: InitialGameStateOptions = {}): G
 export function updateGameState(state: GameState, input: GameInput, dt: number): GameState {
   const next = cloneState(state);
   const step = Math.max(0, dt);
+  updateCameraLook(next, input);
 
   if (input.interact) {
     if (next.mode === "onFoot" && distanceXZ(next.player.position, next.excavator.position) <= INTERACTION_DISTANCE) {
@@ -187,7 +202,7 @@ export function updateGameState(state: GameState, input: GameInput, dt: number):
 }
 
 function updatePlayer(state: GameState, input: GameInput, dt: number): void {
-  const direction = movementDirection(input);
+  const direction = movementDirection(input, state.camera.yaw);
   const moving = direction.x !== 0 || direction.z !== 0;
   state.player.moving = moving;
   if (moving) {
@@ -217,7 +232,7 @@ function updatePlayer(state: GameState, input: GameInput, dt: number): void {
 }
 
 function updateExcavator(state: GameState, input: GameInput, dt: number): void {
-  const direction = movementDirection(input);
+  const direction = movementDirection(input, state.camera.yaw);
   state.excavator.position.x += direction.x * TRACK_SPEED * dt;
   state.excavator.position.z += direction.z * TRACK_SPEED * dt;
   state.excavator.position = clampToWorld(state.excavator.position);
@@ -253,9 +268,15 @@ function updateExcavator(state: GameState, input: GameInput, dt: number): void {
   updateDestructibles(state, input, direction);
 }
 
-function movementDirection(input: GameInput): { x: number; z: number } {
-  const x = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-  const z = (input.backward ? 1 : 0) - (input.forward ? 1 : 0);
+function movementDirection(input: GameInput, yaw: number): { x: number; z: number } {
+  const strafe = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  const forwardAmount = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
+  const forwardX = Math.sin(yaw);
+  const forwardZ = Math.cos(yaw);
+  const rightX = -Math.cos(yaw);
+  const rightZ = Math.sin(yaw);
+  const x = snapNearZero(forwardX * forwardAmount + rightX * strafe);
+  const z = snapNearZero(forwardZ * forwardAmount + rightZ * strafe);
   const length = Math.hypot(x, z);
 
   if (length === 0) {
@@ -266,6 +287,19 @@ function movementDirection(input: GameInput): { x: number; z: number } {
     x: x / length,
     z: z / length
   };
+}
+
+function updateCameraLook(state: GameState, input: GameInput): void {
+  state.camera.yaw = normalizeAngle(state.camera.yaw - input.lookDeltaX * MOUSE_LOOK_SENSITIVITY);
+  state.camera.pitch = clamp(
+    state.camera.pitch - input.lookDeltaY * MOUSE_LOOK_SENSITIVITY,
+    -CAMERA_PITCH_LIMIT,
+    CAMERA_PITCH_LIMIT
+  );
+}
+
+function snapNearZero(value: number): number {
+  return Math.abs(value) < 1e-10 ? 0 : value;
 }
 
 function clampToWorld(position: Vec3): Vec3 {
@@ -369,6 +403,10 @@ function cloneState(state: GameState): GameState {
       boomAngle: state.excavator.boomAngle,
       stickAngle: state.excavator.stickAngle,
       bucketAngle: state.excavator.bucketAngle
+    },
+    camera: {
+      yaw: state.camera.yaw,
+      pitch: state.camera.pitch
     },
     destructibles: state.destructibles.map(cloneDestructible)
   };

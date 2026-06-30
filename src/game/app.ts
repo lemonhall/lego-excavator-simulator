@@ -47,6 +47,7 @@ declare global {
       physics?: unknown;
       audio?: Record<string, unknown>;
       communityModels?: Record<string, unknown>;
+      controls?: Record<string, unknown>;
       teleport?: (options: DebugTeleportOptions) => void;
     };
   }
@@ -113,7 +114,7 @@ export function mountGameApp(root: HTMLElement): GameApp {
     console.warn("Failed to load official worker model; using procedural fallback.", error);
   });
   const camera = new PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 120);
-  const input = new KeyboardInput(window);
+  const input = new KeyboardInput(window, renderer.domElement);
   const audio = new GameAudioController();
   let physics: PhysicsWorldController | undefined;
   void createPhysicsWorldController()
@@ -251,6 +252,11 @@ function syncDebugState(
     excavator: getExcavatorDebug(world, state),
     destructibles: getDestructibleDebug(world, state),
     communityModels: getCommunityModelsDebug(communityInstances),
+    controls: {
+      pointerLocked: document.pointerLockElement !== null,
+      cameraYaw: state.camera.yaw,
+      cameraPitch: state.camera.pitch
+    },
     physics: physics?.getDebugState() ?? fallbackPhysicsDebug,
     limbRotations: {
       leftArm: world.playerRoot.getObjectByName("playerLeftArm")?.rotation.x,
@@ -818,11 +824,21 @@ function registerCommunityModelPhysics(
 
 function getCommunityModelsDebug(communityInstances: CommunityModelInstance[]): Record<string, unknown> {
   let visiblePartCount = 0;
+  const instances: Record<string, unknown>[] = [];
   communityInstances.forEach((instance) => {
     instance.root.traverse((object) => {
       if (object.visible && object.userData.communityModelPart === true) {
         visiblePartCount += 1;
       }
+    });
+    const bounds = new Box3().setFromObject(instance.root);
+    instances.push({
+      id: instance.id,
+      modelId: instance.modelId,
+      status: instance.status,
+      position: instance.root.position.toArray(),
+      boundsMin: bounds.min.toArray(),
+      boundsMax: bounds.max.toArray()
     });
   });
 
@@ -831,7 +847,8 @@ function getCommunityModelsDebug(communityInstances: CommunityModelInstance[]): 
     instanceCount: communityInstances.length,
     visiblePartCount,
     sourceKinds: [...new Set(communityInstances.map((instance) => instance.sourceKind))],
-    statuses: Object.fromEntries(communityInstances.map((instance) => [instance.id, instance.status]))
+    statuses: Object.fromEntries(communityInstances.map((instance) => [instance.id, instance.status])),
+    instances
   };
 }
 
@@ -970,7 +987,7 @@ function updateHud(hud: HTMLElement, state: GameState, audio: GameAudioControlle
     <div class="hud-title">LEGO EXCAVATOR FARM</div>
     <div data-testid="mode">状态：${modeLabel}</div>
     <div data-testid="camera-mode">镜头：${cameraLabel}</div>
-    <div>WASD 行走/开车 | 空格 跳跃 | E 上车/下车 | B 模型库 | J/L 上车回转 | U/O 大臂 | N/M 小臂 | Y/H 铲斗</div>
+    <div>点击画面锁定鼠标 | WASD 行走/开车 | 空格 跳跃 | E 上车/下车 | B 模型库 | J/L 上车回转 | U/O 大臂 | N/M 小臂 | Y/H 铲斗</div>
     <div>拆卸：${detachedCount} 已拆 / ${damagedCount} 受损</div>
     <div data-testid="audio-mode">声音：${audioLabel}</div>
   `;

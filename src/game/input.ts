@@ -4,8 +4,10 @@ export class KeyboardInput {
   private readonly pressed = new Set<string>();
   private interactLatch = false;
   private modelBrowserLatch = false;
+  private lookDeltaX = 0;
+  private lookDeltaY = 0;
 
-  constructor(target: Window) {
+  constructor(target: Window, pointerTarget?: HTMLElement) {
     target.addEventListener("keydown", (event) => {
       this.pressed.add(event.code);
       if (event.code === "KeyE") {
@@ -40,6 +42,24 @@ export class KeyboardInput {
     target.addEventListener("keyup", (event) => {
       this.pressed.delete(event.code);
     });
+
+    target.addEventListener("mousemove", (event) => {
+      if (pointerTarget && target.document.pointerLockElement !== pointerTarget) {
+        return;
+      }
+      this.lookDeltaX += event.movementX;
+      this.lookDeltaY += event.movementY;
+    });
+
+    pointerTarget?.addEventListener("click", () => {
+      if (target.document.pointerLockElement !== pointerTarget) {
+        void pointerTarget.requestPointerLock();
+      }
+    });
+
+    pointerTarget?.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+    });
   }
 
   snapshot(): GameInput {
@@ -58,11 +78,15 @@ export class KeyboardInput {
       stickOut: this.pressed.has("KeyM"),
       bucketCurl: this.pressed.has("KeyY"),
       bucketDump: this.pressed.has("KeyH"),
-      toggleModelBrowser: this.modelBrowserLatch
+      toggleModelBrowser: this.modelBrowserLatch,
+      lookDeltaX: this.lookDeltaX,
+      lookDeltaY: this.lookDeltaY
     };
 
     this.interactLatch = false;
     this.modelBrowserLatch = false;
+    this.lookDeltaX = 0;
+    this.lookDeltaY = 0;
     return input;
   }
 }

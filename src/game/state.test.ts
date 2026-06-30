@@ -24,7 +24,9 @@ const idleInput = (): GameInput => ({
   stickOut: false,
   bucketCurl: false,
   bucketDump: false,
-  toggleModelBrowser: false
+  toggleModelBrowser: false,
+  lookDeltaX: 0,
+  lookDeltaY: 0
 });
 
 describe("game state", () => {
@@ -35,6 +37,26 @@ describe("game state", () => {
     expect(next.mode).toBe("onFoot");
     expect(next.player.position.z).toBeLessThan(state.player.position.z);
     expect(next.excavator.position).toEqual(state.excavator.position);
+  });
+
+  it("REQ-0006-001 moves the on-foot player forward along the FPS camera yaw", () => {
+    const state = createInitialGameState();
+    const turned = updateGameState(state, { ...idleInput(), lookDeltaX: 500 }, 1 / 60);
+
+    const next = updateGameState(turned, { ...idleInput(), forward: true }, 1);
+
+    expect(next.player.position.x).toBeGreaterThan(turned.player.position.x + 2);
+    expect(Math.abs(next.player.position.z - turned.player.position.z)).toBeLessThan(0.5);
+  });
+
+  it("REQ-0006-001 applies mouse look deltas and clamps pitch", () => {
+    let state = createInitialGameState();
+
+    state = updateGameState(state, { ...idleInput(), lookDeltaX: 100, lookDeltaY: -10000 }, 1 / 60);
+
+    expect(state.camera.yaw).toBeGreaterThan(0);
+    expect(state.camera.pitch).toBeGreaterThan(0);
+    expect(state.camera.pitch).toBeLessThan(1.5);
   });
 
   it("REQ-0002-004 advances walk animation metadata while moving", () => {

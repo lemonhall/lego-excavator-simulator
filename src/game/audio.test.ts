@@ -17,7 +17,9 @@ const idleInput = (): GameInput => ({
   stickOut: false,
   bucketCurl: false,
   bucketDump: false,
-  toggleModelBrowser: false
+  toggleModelBrowser: false,
+  lookDeltaX: 0,
+  lookDeltaY: 0
 });
 
 describe("audio cues", () => {

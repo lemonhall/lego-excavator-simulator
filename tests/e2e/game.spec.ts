@@ -112,6 +112,20 @@ test.describe("lego excavator game", () => {
     await expect(page.getByTestId("camera-mode")).toContainText("第三人称过肩");
   });
 
+  test("REQ-0006-001 mouse movement steers FPS-style camera look after canvas click", async ({ page }) => {
+    await page.goto("/");
+
+    const before = await page.evaluate(() => window.__legoGameDebug?.controls as Record<string, unknown>);
+    await page.getByTestId("game-canvas").click();
+    await page.mouse.move(500, 300);
+    await page.mouse.move(650, 300);
+    await page.waitForTimeout(120);
+    const after = await page.evaluate(() => window.__legoGameDebug?.controls as Record<string, unknown>);
+
+    expect(Number(after.cameraYaw)).not.toBe(Number(before.cameraYaw));
+    await expect(page.getByTestId("hud")).toContainText("点击画面锁定鼠标");
+  });
+
   test("REQ-0004-002 and REQ-0004-004 drives into a destructible farm prop", async ({ page }) => {
     await page.goto("/");
 
@@ -308,5 +322,35 @@ test.describe("lego excavator game", () => {
     expect(Object.values(detachedDebug.statuses as Record<string, unknown>)).toContain("detached");
     expect(Number(firstPhysics.brokenLinkCount)).toBeGreaterThan(0);
     expect(secondPhysics.movingPartSample).not.toEqual(firstPhysics.movingPartSample);
+  });
+
+  test("REQ-0005-003 spaces and grounds three loaded LDraw community models", async ({ page }) => {
+    await page.goto("/");
+
+    await page.keyboard.press("KeyB");
+    await page.getByTestId("spawn-community-model-mini-construction").click();
+    await page.getByTestId("spawn-community-model-lighthouse").click();
+    await page.getByTestId("spawn-community-model-radar-truck").click();
+
+    await page.waitForFunction(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
+      return Number(communityModels?.instanceCount ?? 0) === 3;
+    });
+
+    const debug = await page.evaluate(() => window.__legoGameDebug?.communityModels as Record<string, unknown>);
+    const instances = debug.instances as Array<{ position: number[]; boundsMin: number[] }>;
+    expect(instances).toHaveLength(3);
+
+    for (const instance of instances) {
+      expect(instance.boundsMin[1]).toBeGreaterThanOrEqual(-0.02);
+      expect(instance.boundsMin[1]).toBeLessThan(0.05);
+    }
+    for (let a = 0; a < instances.length; a += 1) {
+      for (let b = a + 1; b < instances.length; b += 1) {
+        const dx = instances[a].position[0] - instances[b].position[0];
+        const dz = instances[a].position[2] - instances[b].position[2];
+        expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(4.8);
+      }
+    }
   });
 });

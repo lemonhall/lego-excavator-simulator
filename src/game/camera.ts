@@ -17,18 +17,21 @@ export function computeCameraRig(state: GameState): CameraRig {
 
 function computeOverShoulderRig(state: GameState): CameraRig {
   const player = state.player.position;
+  const forward = computeLookForward(state.camera.yaw, state.camera.pitch);
+  const right = computeHorizontalRight(state.camera.yaw);
+  const position = {
+    x: player.x - forward.x * 3.0 + right.x * 0.65,
+    y: player.y + 1.55 - forward.y * 0.8,
+    z: player.z - forward.z * 3.0 + right.z * 0.65
+  };
 
   return {
     mode: "overShoulder",
-    position: {
-      x: player.x + 1.05,
-      y: player.y + 2.15,
-      z: player.z + 3.1
-    },
+    position,
     target: {
-      x: player.x + 0.2,
-      y: player.y + 1.35,
-      z: player.z - 3.2
+      x: position.x + forward.x * 6,
+      y: position.y + forward.y * 6,
+      z: position.z + forward.z * 6
     },
     lerp: 0.18
   };
@@ -37,20 +40,22 @@ function computeOverShoulderRig(state: GameState): CameraRig {
 function computeDriverCabRig(state: GameState): CameraRig {
   const excavator = state.excavator.position;
   const heading = getDriverHeading(state);
-  const forward = { x: -Math.sin(heading), z: -Math.cos(heading) };
-  const right = { x: Math.cos(heading), z: -Math.sin(heading) };
+  const cabForward = { x: Math.sin(heading), z: Math.cos(heading) };
+  const cabRight = { x: -Math.cos(heading), z: Math.sin(heading) };
+  const lookForward = computeLookForward(state.camera.yaw, state.camera.pitch);
+  const position = {
+    x: excavator.x - cabRight.x * 1.25 - cabForward.x * 1.85,
+    y: excavator.y + 2.55,
+    z: excavator.z - cabRight.z * 1.25 - cabForward.z * 1.85
+  };
 
   return {
     mode: "driverCab",
-    position: {
-      x: excavator.x - right.x * 1.25 - forward.x * 1.85,
-      y: excavator.y + 2.55,
-      z: excavator.z - right.z * 1.25 - forward.z * 1.85
-    },
+    position,
     target: {
-      x: excavator.x + right.x * 0.45 + forward.x * 4.2,
-      y: excavator.y + 1.25,
-      z: excavator.z + right.z * 0.45 + forward.z * 4.2
+      x: position.x + lookForward.x * 6,
+      y: position.y + lookForward.y * 6,
+      z: position.z + lookForward.z * 6
     },
     lerp: 0.45
   };
@@ -58,4 +63,20 @@ function computeDriverCabRig(state: GameState): CameraRig {
 
 function getDriverHeading(state: GameState): number {
   return state.excavator.upperRotation;
+}
+
+function computeLookForward(yaw: number, pitch: number): Vec3 {
+  const pitchScale = Math.cos(pitch);
+  return {
+    x: Math.sin(yaw) * pitchScale,
+    y: Math.sin(pitch),
+    z: Math.cos(yaw) * pitchScale
+  };
+}
+
+function computeHorizontalRight(yaw: number): { x: number; z: number } {
+  return {
+    x: -Math.cos(yaw),
+    z: Math.sin(yaw)
+  };
 }
