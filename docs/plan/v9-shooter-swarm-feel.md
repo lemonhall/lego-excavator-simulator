@@ -20,7 +20,7 @@
 - 重做玩家加特林挂载和命名节点，使枪和枪口在过肩视角可见。
 - 扩展 `weapon.ts`，支持 barrel lane、spread、tracer 起止点和 debug。
 - 把 projectile 视觉从小球改成 tracer streak，并保留枪口火光。
-- 默认自动生成不少于 9 个真实 manifest LDraw 实例，分散成靶场路线。
+- 默认分批自动生成不少于 27 个真实 manifest LDraw `radar-truck` 实例，用颜色变体区分并分散成靶场路线。
 - 新增简单 enemy 纯逻辑模块作为后续真实社区敌人资产接入基础；本轮运行时不生成手捏 enemy 视觉。
 - 为社区车辆增加无人驾驶巡逻和 wheel spin。
 - 新增碎片 TTL cleanup，暴露 debug 计数。
@@ -41,14 +41,14 @@
    - debug `projectileVisualKind === "tracer-streak"`。
 2. `npm test -- src/game/world.test.ts src/game/app.test.ts` exit 0，覆盖：
    - `playerGatlingBarrelCluster` 存在，barrel count 为 6，muzzle 局部 z 小于 -0.8。
-   - 默认 community placement 支持 9+ 实例且最小间距不小于 12。
+   - 默认 community placement 支持 27+ radar 车实例、颜色变体、不小于 28 的最小间距，并分批加载以保护启动交互。
    - patrol vehicle delta 会改变位置和 heading。
 3. `npm test -- src/game/enemies.test.ts src/game/cleanup.test.ts` exit 0，覆盖：
    - enemy 纯逻辑更新后靠近玩家。
    - enemy 纯逻辑受击死亡后 destroyed count 增加。
    - detached debris 超过 TTL 后 removed count 增加。
 4. `npm run e2e -- tests/e2e/game.spec.ts --project=desktop-chrome --grep "v9 shooter swarm"` exit 0，覆盖：
-   - 默认 `communityModels.instanceCount >= 9`。
+   - 默认 `communityModels.instanceCount >= 27`。
    - `weapon.projectileVisualKind === "tracer-streak"`、`weapon.tracerVisualCount > 0`。
    - 运行时不生成手捏 enemy 视觉；射击 LDraw 目标后 community status 变 detached。
    - `vehicles.patrolCount >= 2` 且无人驾驶车辆位置变化。
@@ -78,7 +78,7 @@
 2. TDD Red：新增 weapon/world/app/enemy/cleanup 测试，运行到红，确认失败来自缺少 v9 行为。
 3. TDD Green：实现 weapon barrel lane、spread 和 tracer debug。
 4. TDD Green：重做 player gatling geometry 和挂载位置。
-5. TDD Green：默认 18+ LDraw 实例摆放和 spacing。
+5. TDD Green：默认 27+ LDraw radar 车实例摆放、颜色变体和 spacing。
 6. TDD Green：实现 enemy 纯逻辑和 app 集成。
 7. TDD Green：实现 vehicle patrol 和 wheel spin。
 8. TDD Green：实现 detached debris TTL cleanup。
@@ -89,7 +89,7 @@
 
 ## Risks
 
-- **性能风险**：18+ LDraw 实例、enemy 和高射速可能拖慢浏览器。使用 projectile/tracer 上限、目标 health 较低、碎片 TTL 回收。
+- **性能风险**：27+ LDraw radar 车实例和高射速可能拖慢浏览器。使用分批生成、projectile/tracer 上限、目标 health 较低、碎片 3 秒 TTL 回收。
 - **资产风险**：在线社区模型下载不稳定。本轮只复用现有 manifest 中的真实 LDraw 模型多实例，不伪造来源。
 - **物理风险**：Rapier remove API 可能不足。本轮至少隐藏视觉碎片并停止同步，后续版本再做物理 body 真删除。
 - **E2E 稳定性风险**：大量异步 LDraw 加载可能导致测试等待变长。E2E 使用 debug 条件等待，不使用固定截图判定。

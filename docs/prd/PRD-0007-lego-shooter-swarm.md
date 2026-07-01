@@ -23,9 +23,9 @@
 ### REQ-0007-003: 默认稳定目标场
 
 - **动机**：360x360 空场只有三个模型过于单调，但过多重型 LDraw 实例会造成卡顿。
-- **范围**：启动后自动生成不少于 9 个可射击目标实例；优先复用现有真实 LDraw catalog 模型进行多实例分散摆放，辅以已有 farm destructibles；三类模型彼此拉开距离，形成前进路线。
+- **范围**：启动后分批自动生成不少于 27 个可射击目标实例；当前只复用现有真实 LDraw catalog 中的 `radar-truck`，通过确定性的颜色变体增加多样性，辅以已有 farm destructibles；实例彼此拉开距离，形成前进路线。
 - **非目标**：不做在线社区搜索下载、不做场景保存、不伪造未下载社区模型。
-- **验收口径**：E2E debug `communityModels.instanceCount >= 9`，`communityModels.modelFormat === "ldraw"`，实例间最小距离不小于 12；至少包含 vehicle 和 building 类目标。
+- **验收口径**：E2E debug `communityModels.instanceCount >= 27`，`communityModels.modelFormat === "ldraw"`，实例 `modelId` 全部为 `radar-truck`，`colorVariantIndex` 至少出现两个值，实例间最小距离不小于 28。
 
 ### REQ-0007-004: 社区敌人资产预留
 
@@ -37,14 +37,14 @@
 ### REQ-0007-005: 车辆自动巡逻
 
 - **动机**：社区车辆既能驾驶，也应该在无人驾驶时成为动态目标/障碍。
-- **范围**：`mini-construction` 与 `radar-truck` 等 vehicle 类社区实例在未被玩家驾驶且未 detached 时低速巡逻，轮子按行驶距离旋转；玩家进入驾驶后停止巡逻并交给玩家控制。
+- **范围**：默认生成的 `radar-truck` 社区实例在未被玩家驾驶且未 detached 时低速巡逻，轮子按行驶距离旋转；玩家进入驾驶后停止巡逻并交给玩家控制。
 - **非目标**：不做碰撞避障 AI、交通规则或复杂路线编辑。
 - **验收口径**：unit test 验证 patrol delta 会改变 vehicle 位置和 heading；E2E 验证无人驾驶车辆位置变化且 `vehicles.patrolCount >= 2`。
 
 ### REQ-0007-006: 碎片 TTL 回收
 
 - **动机**：高射速和大量目标会产生大量碎块，必须有性能上限。
-- **范围**：被击毁后的 community/farm/enemy 碎片保留固定 TTL，然后隐藏或移除视觉并停止同步；debug 暴露 active/removed debris 计数；projectile 和 tracer 继续使用短 TTL/上限。
+- **范围**：被击毁后的 community/farm/enemy 碎片保留 3 秒，然后隐藏或移除视觉并停止同步；debug 暴露 active/removed debris 计数；projectile 和 tracer 继续使用短 TTL/上限。
 - **非目标**：不要求本轮彻底释放 Rapier 内部所有刚体；若物理引擎不支持安全 remove，本轮至少隐藏对象、停止视觉同步并记录限制。
 - **验收口径**：unit/E2E 验证目标 detached 后一段时间内 visible debris 存在，超过 TTL 后 `cleanup.removedDebrisCount > 0` 且 active debris 不持续增长。
 

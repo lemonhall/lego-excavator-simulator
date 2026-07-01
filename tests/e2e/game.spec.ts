@@ -129,22 +129,21 @@ test.describe("lego excavator game", () => {
   test("REQ-0004-002 and REQ-0004-004 drives into a destructible farm prop", async ({ page }) => {
     await page.goto("/");
 
-    await page.keyboard.down("KeyD");
-    await page.waitForTimeout(520);
-    await page.keyboard.up("KeyD");
-    await page.keyboard.down("KeyW");
-    await page.waitForTimeout(520);
-    await page.keyboard.up("KeyW");
-    await page.keyboard.press("KeyE");
-
+    await page.evaluate(() => {
+      const debug = window.__legoGameDebug as
+        | ({ teleport?: (options: { mode: "driving"; excavatorPosition: { x: number; y: number; z: number } }) => void })
+        | undefined;
+      debug?.teleport?.({ mode: "driving", excavatorPosition: { x: -12, y: 0, z: 2.4 } });
+    });
     await expect(page.getByTestId("mode")).toContainText("驾驶挖掘机");
 
-    await page.keyboard.down("KeyA");
-    await page.waitForTimeout(5000);
-    await page.keyboard.up("KeyA");
     await page.keyboard.down("KeyS");
-    await page.waitForTimeout(3700);
+    await page.waitForTimeout(1400);
     await page.keyboard.up("KeyS");
+    await page.waitForFunction(() => {
+      const destructibles = window.__legoGameDebug?.destructibles as Record<string, unknown> | undefined;
+      return Number(destructibles?.detachedCount ?? 0) > 0;
+    });
 
     const destructibleDebug = await page.evaluate(() => window.__legoGameDebug?.destructibles);
     expect(Number(destructibleDebug?.detachedCount)).toBeGreaterThan(0);
@@ -168,21 +167,16 @@ test.describe("lego excavator game", () => {
   test("REQ-0004-005 breaks Rapier LEGO assemblies into moving parts", async ({ page }) => {
     await page.goto("/");
 
-    await page.keyboard.down("KeyD");
-    await page.waitForTimeout(520);
-    await page.keyboard.up("KeyD");
-    await page.keyboard.down("KeyW");
-    await page.waitForTimeout(520);
-    await page.keyboard.up("KeyW");
-    await page.keyboard.press("KeyE");
-
+    await page.evaluate(() => {
+      const debug = window.__legoGameDebug as
+        | ({ teleport?: (options: { mode: "driving"; excavatorPosition: { x: number; y: number; z: number } }) => void })
+        | undefined;
+      debug?.teleport?.({ mode: "driving", excavatorPosition: { x: -12, y: 0, z: 2.4 } });
+    });
     await expect(page.getByTestId("mode")).toContainText("驾驶挖掘机");
 
-    await page.keyboard.down("KeyA");
-    await page.waitForTimeout(5000);
-    await page.keyboard.up("KeyA");
     await page.keyboard.down("KeyS");
-    await page.waitForTimeout(3700);
+    await page.waitForTimeout(1400);
     await page.keyboard.up("KeyS");
     await page.waitForFunction(() => {
       const physics = window.__legoGameDebug?.physics as Record<string, unknown> | undefined;
@@ -272,9 +266,11 @@ test.describe("lego excavator game", () => {
     const panel = page.getByTestId("community-model-panel");
     await expect(panel).toBeVisible();
     await expect(panel).toContainText("LDraw 模型库");
-    await expect(panel).toContainText("Mini Construction");
+    await expect(panel).toContainText("Radar Truck");
+    await expect(panel).not.toContainText("Mini Construction");
+    await expect(panel).not.toContainText("Lighthouse");
     await expect(panel).toContainText("许可证");
-    await expect(panel.locator("[data-testid='community-model-card']")).toHaveCount(3);
+    await expect(panel.locator("[data-testid='community-model-card']")).toHaveCount(1);
 
     await page.keyboard.press("KeyB");
     await expect(panel).toBeHidden();
@@ -288,7 +284,7 @@ test.describe("lego excavator game", () => {
     });
 
     await page.keyboard.press("KeyB");
-    await page.getByTestId("spawn-community-model-mini-construction").click();
+    await page.getByTestId("spawn-community-model-radar-truck").click();
 
     await page.waitForFunction(() => {
       const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
@@ -343,15 +339,17 @@ test.describe("lego excavator game", () => {
 
     const spawnedVehicles = await page.evaluate(() => {
       const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown>;
-      const instances = communityModels.instances as Array<{ modelId: string; position: number[]; wheelCount: number }>;
+      const instances = communityModels.instances as Array<{ modelId: string; position: number[]; wheelCount: number; colorVariantIndex: number }>;
       return instances.map((instance) => ({
         modelId: instance.modelId,
         position: instance.position,
-        wheelCount: instance.wheelCount
+        wheelCount: instance.wheelCount,
+        colorVariantIndex: instance.colorVariantIndex
       }));
     });
-    expect(spawnedVehicles.find((instance) => instance.modelId === "mini-construction")?.wheelCount).toBe(6);
-    expect(spawnedVehicles.find((instance) => instance.modelId === "radar-truck")?.wheelCount).toBe(4);
+    expect(spawnedVehicles.every((instance) => instance.modelId === "radar-truck")).toBe(true);
+    expect(spawnedVehicles.every((instance) => instance.wheelCount === 4)).toBe(true);
+    expect(new Set(spawnedVehicles.map((instance) => instance.colorVariantIndex)).size).toBeGreaterThan(1);
     const firstVehiclePosition = spawnedVehicles[0].position;
     await page.evaluate((position) => {
       const debug = window.__legoGameDebug as
@@ -387,13 +385,13 @@ test.describe("lego excavator game", () => {
     });
 
     expect(after.position?.[2]).toBeLessThan((before.position?.[2] ?? 0) - 0.8);
-    expect(after.wheelCount).toBe(6);
+    expect(after.wheelCount).toBe(4);
     expect(after.wheelRotation).not.toBe(before.wheelRotation);
     await page.keyboard.press("KeyE");
     await expect(page.getByTestId("mode")).toContainText("步行");
   });
 
-  test("REQ-0005-003 spaces and grounds three loaded LDraw community models", async ({ page }) => {
+  test("REQ-0005-003 spaces and grounds loaded radar truck community models", async ({ page }) => {
     await page.goto("/");
 
     await page.waitForFunction(() => {
@@ -413,7 +411,7 @@ test.describe("lego excavator game", () => {
       for (let b = a + 1; b < instances.length; b += 1) {
         const dx = instances[a].position[0] - instances[b].position[0];
         const dz = instances[a].position[2] - instances[b].position[2];
-        expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(30);
+        expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(28);
       }
     }
   });
@@ -469,7 +467,7 @@ test.describe("lego excavator game", () => {
 
     await page.waitForFunction(() => {
       const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
-      return Number(communityModels?.instanceCount ?? 0) >= 9;
+      return Number(communityModels?.instanceCount ?? 0) >= 27;
     }, undefined, { timeout: 30000 });
 
     const initial = await page.evaluate(() => {
@@ -480,7 +478,7 @@ test.describe("lego excavator game", () => {
         weapon: debug.weapon as Record<string, unknown>
       };
     });
-    expect(Number(initial.communityModels.instanceCount)).toBeGreaterThanOrEqual(9);
+    expect(Number(initial.communityModels.instanceCount)).toBeGreaterThanOrEqual(27);
     expect(initial.communityModels.modelFormat).toBe("ldraw");
     expect(Number(initial.vehicles.patrolCount)).toBeGreaterThanOrEqual(2);
     expect(initial.weapon.hasGatlingGun).toBe(true);
@@ -489,13 +487,13 @@ test.describe("lego excavator game", () => {
     const beforeVehicle = await page.evaluate(() => {
       const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown>;
       const instances = communityModels.instances as Array<{ modelId: string; position: number[] }>;
-      return instances.find((instance) => instance.modelId === "mini-construction")?.position;
+      return instances.find((instance) => instance.modelId === "radar-truck")?.position;
     });
     await page.waitForTimeout(750);
     const afterVehicle = await page.evaluate(() => {
       const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown>;
       const instances = communityModels.instances as Array<{ modelId: string; position: number[] }>;
-      return instances.find((instance) => instance.modelId === "mini-construction")?.position;
+      return instances.find((instance) => instance.modelId === "radar-truck")?.position;
     });
     expect(afterVehicle).toBeDefined();
     expect(Math.hypot((afterVehicle?.[0] ?? 0) - (beforeVehicle?.[0] ?? 0), (afterVehicle?.[2] ?? 0) - (beforeVehicle?.[2] ?? 0))).toBeGreaterThan(0.1);

@@ -2,14 +2,19 @@ import { describe, expect, it } from "vitest";
 import { Mesh, BoxGeometry, MeshStandardMaterial, Vector3 } from "three";
 import {
   applyDetachedCommunityFallbackPose,
+  applyCommunityColorVariant,
   animateCommunityVehicleWheels,
   computeCommunityArenaPopulation,
   computeCommunityModelPlacement,
+  computeDefaultCommunitySpawnDelay,
   computeCommunityVehiclePatrolDelta,
   computeCommunityVehicleDriveDelta,
-  isDrivableCommunityModel
+  computeWeaponFireDirection,
+  DEFAULT_COMMUNITY_TARGET_COUNT,
+  isDrivableCommunityModel,
+  selectSpawnableCommunityModels
 } from "./app";
-import type { CommunityModelManifestEntry } from "./communityModels";
+import type { CommunityModelCatalog, CommunityModelManifestEntry } from "./communityModels";
 import type { GameInput } from "./state";
 
 const idleInput = (): GameInput => ({
@@ -59,16 +64,57 @@ describe("community model placement", () => {
   });
 
   it("REQ-0007-003 creates a stable default LDraw arena population with safe spacing", () => {
-    const population = computeCommunityArenaPopulation(9);
+    const population = computeCommunityArenaPopulation(DEFAULT_COMMUNITY_TARGET_COUNT);
 
-    expect(population).toHaveLength(9);
+    expect(DEFAULT_COMMUNITY_TARGET_COUNT).toBeGreaterThanOrEqual(27);
+    expect(population).toHaveLength(DEFAULT_COMMUNITY_TARGET_COUNT);
     for (let a = 0; a < population.length; a += 1) {
       for (let b = a + 1; b < population.length; b += 1) {
         const dx = population[a].x - population[b].x;
         const dz = population[a].z - population[b].z;
-        expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(12);
+        expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(28);
       }
     }
+  });
+
+  it("REQ-0007-003 staggers the larger default spawn wave to protect startup input", () => {
+    expect(computeDefaultCommunitySpawnDelay(0)).toBeGreaterThanOrEqual(1200);
+    expect(computeDefaultCommunitySpawnDelay(26) - computeDefaultCommunitySpawnDelay(0)).toBeGreaterThanOrEqual(2000);
+  });
+
+  it("REQ-0007-003 only exposes radar trucks as spawnable community targets", () => {
+    const catalog = {
+      schemaVersion: 2,
+      models: [
+        { id: "mini-construction", category: "Vehicle" },
+        { id: "lighthouse", category: "Building" },
+        { id: "radar-truck", category: "Vehicle" }
+      ]
+    } as CommunityModelCatalog;
+
+    expect(selectSpawnableCommunityModels(catalog).map((model) => model.id)).toEqual(["radar-truck"]);
+  });
+
+  it("REQ-0007-003 applies deterministic color variants to repeated radar trucks", () => {
+    const first = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial({ color: "#38bdf8" }));
+    const second = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial({ color: "#38bdf8" }));
+
+    applyCommunityColorVariant(first, 0);
+    applyCommunityColorVariant(second, 1);
+
+    expect((first.material as MeshStandardMaterial).color.getHexString()).not.toBe(
+      (second.material as MeshStandardMaterial).color.getHexString()
+    );
+    expect(first.userData.colorVariantIndex).toBe(0);
+    expect(second.userData.colorVariantIndex).toBe(1);
+  });
+
+  it("REQ-0007-002 uses camera direction directly without assisted aiming", () => {
+    const cameraDirection = new Vector3(0.2, 0, -1).normalize();
+
+    const fireDirection = computeWeaponFireDirection(cameraDirection);
+
+    expect(fireDirection.distanceTo(cameraDirection)).toBeLessThan(0.00001);
   });
 
   it("REQ-0005-004 keeps fallback detached community part poses stable across frames", () => {

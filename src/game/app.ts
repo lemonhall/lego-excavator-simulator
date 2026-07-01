@@ -5,6 +5,7 @@ import {
   CylinderGeometry,
   Mesh,
   MeshPhysicalMaterial,
+  MeshStandardMaterial,
   Object3D,
   PCFSoftShadowMap,
   PerspectiveCamera,
@@ -90,8 +91,10 @@ const COMMUNITY_VEHICLE_INTERACTION_DISTANCE = 2.4;
 const COMMUNITY_WHEEL_SPIN_PER_METER = 7.5;
 const DEFAULT_COMMUNITY_TARGET_HEALTH = 4;
 const FARM_TARGET_HEALTH = 3;
-const DEBRIS_TTL_SECONDS = 4;
-let lastAssistedTargetId: string | undefined;
+const DEBRIS_TTL_SECONDS = 3;
+export const DEFAULT_COMMUNITY_TARGET_COUNT = 27;
+const DEFAULT_COMMUNITY_SPAWN_START_DELAY_MS = 1200;
+const DEFAULT_COMMUNITY_SPAWN_STEP_DELAY_MS = 85;
 
 interface CommunityVehicleDriveState {
   instanceId: string;
@@ -176,6 +179,7 @@ export function mountGameApp(root: HTMLElement): GameApp {
   let modelPanelMessage = "正在加载 LDraw 模型库...";
   let elapsedSeconds = 0;
   let vehiclePatrolDebug = { patrolCount: 0, movedCount: 0 };
+  const pendingCommunitySpawnTimers: number[] = [];
 
   const onResize = () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -200,7 +204,14 @@ export function mountGameApp(root: HTMLElement): GameApp {
       }
       communityCatalog = catalog;
       modelPanelMessage = "";
-      spawnDefaultCommunityTargets(catalog, spawnCommunityModel, autoSpawnedCommunityModelIds);
+      spawnDefaultCommunityTargets(catalog, spawnCommunityModel, autoSpawnedCommunityModelIds, (callback, delayMs) => {
+        const timer = window.setTimeout(() => {
+          if (!disposed) {
+            callback();
+          }
+        }, delayMs);
+        pendingCommunitySpawnTimers.push(timer);
+      });
       renderModelPanel(modelPanel, modelBrowserOpen, communityCatalog, modelPanelMessage, spawnCommunityModel);
     })
     .catch((error: unknown) => {
@@ -218,6 +229,7 @@ export function mountGameApp(root: HTMLElement): GameApp {
     void loadLDrawCommunityModel(model, instanceId)
       .then((instance) => {
         positionCommunityInstance(instance.root, communityInstances.length);
+        applyCommunityColorVariant(instance.root, communityInstances.length);
         world.scene.add(instance.root);
         communityInstances.push(instance);
         registerCommunityModelPhysics(instance, physics);
@@ -294,6 +306,9 @@ export function mountGameApp(root: HTMLElement): GameApp {
     destroy: () => {
       disposed = true;
       window.cancelAnimationFrame(animationFrame);
+      for (const timer of pendingCommunitySpawnTimers) {
+        window.clearTimeout(timer);
+      }
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", unlockAudio);
       window.removeEventListener("pointerdown", unlockAudio);
@@ -711,7 +726,7 @@ function updateWeaponSystem(
   const origin = muzzle ? muzzle.getWorldPosition(new Vector3()) : world.playerRoot.position.clone().add(new Vector3(0, 1.2, -0.4));
   const cameraDirection = camera.getWorldDirection(new Vector3()).normalize();
   const targets = collectShooterTargets(state, communityInstances);
-  const direction = computeAssistedFireDirection(origin, cameraDirection, targets);
+  const direction = computeWeaponFireDirection(cameraDirection);
   const result = weapon.update({
     dt: FIXED_DT,
     firing,
@@ -728,29 +743,8 @@ function updateWeaponSystem(
   muzzleFlash.intensity = weapon.getDebugState().muzzleFlashVisible ? 72 : 0;
 }
 
-function computeAssistedFireDirection(origin: Vector3, cameraDirection: Vector3, targets: ShooterTarget[]): Vector3 {
-  let bestTarget: ShooterTarget | undefined;
-  let bestScore = Number.POSITIVE_INFINITY;
-  lastAssistedTargetId = undefined;
-  for (const target of targets) {
-    const toTarget = target.center.clone().sub(origin);
-    const distance = toTarget.length();
-    if (distance <= 0.01 || distance > 80) {
-      continue;
-    }
-    const targetDirection = toTarget.clone().normalize();
-    const angle = cameraDirection.angleTo(targetDirection);
-    const score = angle + distance * 0.002;
-    if (angle < 0.85 && score < bestScore) {
-      bestTarget = target;
-      bestScore = score;
-    }
-  }
-  if (!bestTarget) {
-    return cameraDirection.clone();
-  }
-  lastAssistedTargetId = bestTarget.id;
-  return bestTarget.center.clone().sub(origin).normalize();
+export function computeWeaponFireDirection(cameraDirection: Vector3): Vector3 {
+  return cameraDirection.lengthSq() > 0 ? cameraDirection.clone().normalize() : new Vector3(0, 0, -1);
 }
 
 function collectShooterTargets(state: GameState, communityInstances: CommunityModelInstance[]): ShooterTarget[] {
@@ -874,7 +868,6 @@ function getWeaponAppDebug(world: FarmWorld, weapon: WeaponSystem): Record<strin
     hasMuzzle: world.playerRoot.getObjectByName("playerWeaponMuzzle") !== undefined,
     barrelCount: cluster?.userData.barrelCount,
     tracerVisualCount: debug.activeProjectileCount,
-    assistedTargetId: lastAssistedTargetId,
     assetSource: world.playerRoot.getObjectByName("playerGatlingGun")?.userData.assetSource
   };
 }
@@ -891,7 +884,7 @@ function renderModelPanel(
     return;
   }
 
-  const models = catalog?.models ?? [];
+  const models = catalog ? selectSpawnableCommunityModels(catalog) : [];
   panel.innerHTML = `
     <div class="model-panel-header">
       <div>
@@ -933,17 +926,49 @@ function renderModelPanel(
 function spawnDefaultCommunityTargets(
   catalog: CommunityModelCatalog,
   spawnCommunityModel: (model: CommunityModelManifestEntry) => void,
-  spawnedIds: Set<string>
+  spawnedIds: Set<string>,
+  scheduleSpawn: (callback: () => void, delayMs: number) => void
 ): void {
-  const population = computeCommunityArenaPopulation(9);
-  for (const placement of population) {
-    const model = catalog.models[placement.modelIndex % catalog.models.length];
+  const population = computeCommunityArenaPopulation(DEFAULT_COMMUNITY_TARGET_COUNT);
+  const models = selectSpawnableCommunityModels(catalog);
+  for (const [index, placement] of population.entries()) {
+    const model = models[placement.modelIndex % models.length];
     if (!model) {
       continue;
     }
     spawnedIds.add(`${model.id}:${placement.slot}`);
-    spawnCommunityModel(model);
+    scheduleSpawn(() => spawnCommunityModel(model), computeDefaultCommunitySpawnDelay(index));
   }
+}
+
+export function computeDefaultCommunitySpawnDelay(index: number): number {
+  return DEFAULT_COMMUNITY_SPAWN_START_DELAY_MS + Math.max(0, index) * DEFAULT_COMMUNITY_SPAWN_STEP_DELAY_MS;
+}
+
+export function selectSpawnableCommunityModels(catalog: CommunityModelCatalog): CommunityModelManifestEntry[] {
+  return catalog.models.filter((model) => model.id === "radar-truck");
+}
+
+export function applyCommunityColorVariant(root: Object3D, variantIndex: number): void {
+  const hueShift = ((variantIndex * 0.137) % 1) - 0.5;
+  root.userData.colorVariantIndex = variantIndex;
+  root.traverse((object) => {
+    object.userData.colorVariantIndex = variantIndex;
+    if (!(object instanceof Mesh)) {
+      return;
+    }
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    const nextMaterials = materials.map((material) => {
+      if (!(material instanceof MeshPhysicalMaterial) && !(material instanceof MeshStandardMaterial)) {
+        return material;
+      }
+      const nextMaterial = material.clone();
+      nextMaterial.color.offsetHSL(hueShift, 0.06, 0);
+      nextMaterial.needsUpdate = true;
+      return nextMaterial;
+    });
+    object.material = Array.isArray(object.material) ? nextMaterials : nextMaterials[0] ?? object.material;
+  });
 }
 
 function positionCommunityInstance(root: Group, index: number): void {
@@ -1366,6 +1391,7 @@ function getCommunityModelsDebug(
     instances.push({
       id: instance.id,
       modelId: instance.modelId,
+      colorVariantIndex: instance.root.userData.colorVariantIndex,
       status: instance.status,
       health: getCommunityTargetHealth(instance),
       position: instance.root.position.toArray(),

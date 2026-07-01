@@ -23,7 +23,7 @@ interface MutableDebrisCleanupTracker extends DebrisCleanupTracker {
 
 export function createDebrisCleanupTracker(options: { ttlSeconds?: number } = {}): DebrisCleanupTracker {
   const tracker: MutableDebrisCleanupTracker = {
-    ttlSeconds: Math.max(0.1, options.ttlSeconds ?? 10),
+    ttlSeconds: Math.max(0.1, options.ttlSeconds ?? 3),
     timers: new Map(),
     partCounts: new Map(),
     removed: new Set(),

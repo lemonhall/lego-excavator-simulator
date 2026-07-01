@@ -18,4 +18,14 @@ describe("debris cleanup", () => {
     });
     expect(cleanup.isRemoved("targetA")).toBe(true);
   });
+
+  it("REQ-0007-006 defaults debris cleanup to three seconds", () => {
+    const cleanup = createDebrisCleanupTracker();
+
+    updateDebrisCleanup(cleanup, [{ id: "targetA", detached: true, visiblePartCount: 4 }], 2.9);
+    expect(cleanup.isRemoved("targetA")).toBe(false);
+
+    updateDebrisCleanup(cleanup, [{ id: "targetA", detached: true, visiblePartCount: 4 }], 0.2);
+    expect(cleanup.isRemoved("targetA")).toBe(true);
+  });
 });
