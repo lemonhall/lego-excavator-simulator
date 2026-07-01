@@ -3,7 +3,8 @@ import { Vector3 } from "three";
 import {
   createWeaponSystem,
   getWeaponDebugState,
-  type ShooterTarget
+  type ShooterTarget,
+  type WeaponProjectile
 } from "./weapon";
 
 describe("LEGO shooter weapon system", () => {
@@ -78,5 +79,33 @@ describe("LEGO shooter weapon system", () => {
       damage: 2
     });
     expect(getWeaponDebugState(weapon).hitCount).toBe(1);
+  });
+
+  it("REQ-0007-002 emits gatling tracer projectiles across rotating barrel lanes", () => {
+    const weapon = createWeaponSystem({
+      fireRatePerSecond: 36,
+      projectileLifetime: 1,
+      spreadRadians: 0.035,
+      barrelLaneCount: 6
+    });
+
+    weapon.update({
+      dt: 0.25,
+      firing: true,
+      origin: new Vector3(0, 1, 0),
+      direction: new Vector3(0, 0, -1),
+      targets: []
+    });
+
+    const projectiles = weapon.getProjectiles() as ReadonlyArray<WeaponProjectile>;
+    const lanes = new Set(projectiles.map((projectile) => projectile.barrelLane));
+    const directionKeys = new Set(projectiles.map((projectile) => projectile.direction.toArray().map((value) => value.toFixed(3)).join(",")));
+    const debug = getWeaponDebugState(weapon);
+
+    expect(debug.projectileVisualKind).toBe("tracer-streak");
+    expect(debug.barrelLaneCount).toBe(6);
+    expect(lanes.size).toBeGreaterThanOrEqual(3);
+    expect(directionKeys.size).toBeGreaterThan(1);
+    expect(projectiles.every((projectile) => projectile.tracerStart.distanceTo(projectile.tracerEnd) > 0.15)).toBe(true);
   });
 });

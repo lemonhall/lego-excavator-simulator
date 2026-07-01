@@ -3,7 +3,9 @@ import { Mesh, BoxGeometry, MeshStandardMaterial, Vector3 } from "three";
 import {
   applyDetachedCommunityFallbackPose,
   animateCommunityVehicleWheels,
+  computeCommunityArenaPopulation,
   computeCommunityModelPlacement,
+  computeCommunityVehiclePatrolDelta,
   computeCommunityVehicleDriveDelta,
   isDrivableCommunityModel
 } from "./app";
@@ -52,6 +54,19 @@ describe("community model placement", () => {
         const dx = placements[a].x - placements[b].x;
         const dz = placements[a].z - placements[b].z;
         expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(30);
+      }
+    }
+  });
+
+  it("REQ-0007-003 creates a stable default LDraw arena population with safe spacing", () => {
+    const population = computeCommunityArenaPopulation(9);
+
+    expect(population).toHaveLength(9);
+    for (let a = 0; a < population.length; a += 1) {
+      for (let b = a + 1; b < population.length; b += 1) {
+        const dx = population[a].x - population[b].x;
+        const dz = population[a].z - population[b].z;
+        expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(12);
       }
     }
   });
@@ -127,5 +142,13 @@ describe("community model placement", () => {
     expect(wheel.rotation.z).not.toBe(0);
     expect(wheel.rotation.x).toBe(0);
     expect(wheel.rotation.y).toBe(0);
+  });
+
+  it("REQ-0007-005 computes patrol movement for idle community vehicles", () => {
+    const delta = computeCommunityVehiclePatrolDelta(2, 0, 1);
+
+    expect(Math.hypot(delta.x, delta.z)).toBeGreaterThan(0.5);
+    expect(delta.heading).not.toBe(0);
+    expect(delta.travelDistance).toBeGreaterThan(0.5);
   });
 });

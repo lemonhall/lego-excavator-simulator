@@ -32,13 +32,18 @@ export interface WeaponDebugState {
   activeProjectileCount: number;
   hitCount: number;
   muzzleFlashVisible: boolean;
+  projectileVisualKind: "tracer-streak";
+  barrelLaneCount: number;
 }
 
-interface Projectile {
+export interface WeaponProjectile {
   id: number;
   position: Vector3;
   previousPosition: Vector3;
   direction: Vector3;
+  tracerStart: Vector3;
+  tracerEnd: Vector3;
+  barrelLane: number;
   age: number;
 }
 
@@ -48,11 +53,13 @@ export interface WeaponSystemOptions {
   projectileLifetime?: number;
   damage?: number;
   maxProjectiles?: number;
+  spreadRadians?: number;
+  barrelLaneCount?: number;
 }
 
 export interface WeaponSystem {
   update: (options: WeaponUpdateOptions) => WeaponUpdateResult;
-  getProjectiles: () => ReadonlyArray<Projectile>;
+  getProjectiles: () => ReadonlyArray<WeaponProjectile>;
   getDebugState: () => WeaponDebugState;
 }
 
@@ -61,6 +68,9 @@ const DEFAULT_PROJECTILE_SPEED = 34;
 const DEFAULT_PROJECTILE_LIFETIME = 0.72;
 const DEFAULT_DAMAGE = 1;
 const DEFAULT_MAX_PROJECTILES = 120;
+const DEFAULT_SPREAD_RADIANS = 0.018;
+const DEFAULT_BARREL_LANE_COUNT = 6;
+const TRACER_LENGTH = 0.42;
 const MUZZLE_FLASH_TIME = 0.07;
 
 export function createWeaponSystem(options: WeaponSystemOptions = {}): WeaponSystem {
@@ -69,7 +79,9 @@ export function createWeaponSystem(options: WeaponSystemOptions = {}): WeaponSys
   const projectileLifetime = Math.max(0.05, options.projectileLifetime ?? DEFAULT_PROJECTILE_LIFETIME);
   const damage = Math.max(0.1, options.damage ?? DEFAULT_DAMAGE);
   const maxProjectiles = Math.max(1, options.maxProjectiles ?? DEFAULT_MAX_PROJECTILES);
-  const projectiles: Projectile[] = [];
+  const spreadRadians = Math.max(0, options.spreadRadians ?? DEFAULT_SPREAD_RADIANS);
+  const barrelLaneCount = Math.max(1, Math.floor(options.barrelLaneCount ?? DEFAULT_BARREL_LANE_COUNT));
+  const projectiles: WeaponProjectile[] = [];
   let nextProjectileId = 1;
   let fireAccumulator = 0;
   let shotsFired = 0;
@@ -90,11 +102,17 @@ export function createWeaponSystem(options: WeaponSystemOptions = {}): WeaponSys
           fireAccumulator = 1;
         }
         while (fireAccumulator >= 1 && projectiles.length < maxProjectiles) {
-          const projectile: Projectile = {
+          const barrelLane = (nextProjectileId - 1) % barrelLaneCount;
+          const projectileDirection = applyDeterministicSpread(normalizedDirection, nextProjectileId, spreadRadians);
+          const tracerEnd = origin.clone().addScaledVector(projectileDirection, TRACER_LENGTH);
+          const projectile: WeaponProjectile = {
             id: nextProjectileId,
             position: origin.clone(),
             previousPosition: origin.clone(),
-            direction: normalizedDirection.clone(),
+            direction: projectileDirection,
+            tracerStart: origin.clone(),
+            tracerEnd,
+            barrelLane,
             age: 0
           };
           projectiles.push(projectile);
@@ -112,6 +130,8 @@ export function createWeaponSystem(options: WeaponSystemOptions = {}): WeaponSys
         const projectile = projectiles[index];
         projectile.previousPosition.copy(projectile.position);
         projectile.position.addScaledVector(projectile.direction, projectileSpeed * step);
+        projectile.tracerEnd.copy(projectile.position);
+        projectile.tracerStart.copy(projectile.position).addScaledVector(projectile.direction, -TRACER_LENGTH);
         projectile.age += step;
 
         const hit = findProjectileHit(projectile, targets, damage);
@@ -134,7 +154,9 @@ export function createWeaponSystem(options: WeaponSystemOptions = {}): WeaponSys
       shotsFired,
       activeProjectileCount: projectiles.length,
       hitCount,
-      muzzleFlashVisible: muzzleFlashTime > 0
+      muzzleFlashVisible: muzzleFlashTime > 0,
+      projectileVisualKind: "tracer-streak",
+      barrelLaneCount
     })
   };
 }
@@ -143,7 +165,7 @@ export function getWeaponDebugState(weapon: Pick<WeaponSystem, "getDebugState">)
   return weapon.getDebugState();
 }
 
-function findProjectileHit(projectile: Projectile, targets: ShooterTarget[], damage: number): ProjectileHit | undefined {
+function findProjectileHit(projectile: WeaponProjectile, targets: ShooterTarget[], damage: number): ProjectileHit | undefined {
   for (const target of targets) {
     if (target.health <= 0 || target.radius <= 0) {
       continue;
@@ -158,6 +180,25 @@ function findProjectileHit(projectile: Projectile, targets: ShooterTarget[], dam
     }
   }
   return undefined;
+}
+
+function applyDeterministicSpread(direction: Vector3, shotId: number, spreadRadians: number): Vector3 {
+  if (spreadRadians === 0) {
+    return direction.clone();
+  }
+  const laneAngle = shotId * 2.399963229728653;
+  const radius = ((shotId % 5) / 4) * spreadRadians;
+  const right = new Vector3().crossVectors(direction, new Vector3(0, 1, 0));
+  if (right.lengthSq() < 0.0001) {
+    right.set(1, 0, 0);
+  }
+  right.normalize();
+  const up = new Vector3().crossVectors(right, direction).normalize();
+  return direction
+    .clone()
+    .addScaledVector(right, Math.cos(laneAngle) * radius)
+    .addScaledVector(up, Math.sin(laneAngle) * radius)
+    .normalize();
 }
 
 function distancePointToSegment(point: Vector3, start: Vector3, end: Vector3): number {

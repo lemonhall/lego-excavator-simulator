@@ -80,6 +80,20 @@ describe("farm world", () => {
     expect(gun?.userData.assetSource).toContain("BrickLink");
   });
 
+  it("REQ-0007-001 positions a six-barrel over-shoulder gatling in front of the player", () => {
+    const world = createFarmWorld();
+    const gun = world.playerRoot.getObjectByName("playerGatlingGun");
+    const cluster = world.playerRoot.getObjectByName("playerGatlingBarrelCluster");
+    const muzzle = world.playerRoot.getObjectByName("playerWeaponMuzzle");
+
+    expect(gun).toBeDefined();
+    expect(cluster).toBeDefined();
+    expect(muzzle).toBeDefined();
+    expect(cluster?.userData.barrelCount).toBe(6);
+    expect(muzzle?.position.z).toBeLessThan(-0.8);
+    expect(gun?.position.z).toBeLessThan(-0.35);
+  });
+
   it("REQ-0002-004 includes official construction minifigure print details", () => {
     const world = createFarmWorld();
 
@@ -217,7 +231,8 @@ describe("farm world", () => {
     const upperSize = new Vector3();
     const boomSize = new Vector3();
 
-    new Box3().setFromObject(world.playerRoot).getSize(playerSize);
+    const playerBody = world.playerRoot.getObjectByName("playerProceduralFallback") ?? world.playerRoot;
+    new Box3().setFromObject(playerBody).getSize(playerSize);
     new Box3().setFromObject(world.excavatorRoot).getSize(excavatorSize);
     new Box3().setFromObject(world.excavatorCrawlerBase).getSize(baseSize);
     new Box3().setFromObject(world.excavatorRoot.getObjectByName("excavatorCab")!).getSize(cabSize);

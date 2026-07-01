@@ -423,7 +423,7 @@ test.describe("lego excavator game", () => {
 
     await page.waitForFunction(() => {
       const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
-      return Number(communityModels?.instanceCount ?? 0) === 3;
+      return Number(communityModels?.instanceCount ?? 0) >= 3;
     });
     await expect(page.getByTestId("hud")).toContainText("左键 射击");
 
@@ -462,5 +462,70 @@ test.describe("lego excavator game", () => {
       const statuses = communityModels?.statuses as Record<string, unknown> | undefined;
       return Object.values(statuses ?? {}).includes("detached") && Number(physics?.brokenLinkCount ?? 0) > 0;
     });
+  });
+
+  test("REQ-0007-001 REQ-0007-002 REQ-0007-003 REQ-0007-005 REQ-0007-006 v9 shooter swarm", async ({ page }) => {
+    await page.goto("/");
+
+    await page.waitForFunction(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
+      return Number(communityModels?.instanceCount ?? 0) >= 9;
+    }, undefined, { timeout: 30000 });
+
+    const initial = await page.evaluate(() => {
+      const debug = window.__legoGameDebug as Record<string, unknown>;
+      return {
+        communityModels: debug.communityModels as Record<string, unknown>,
+        vehicles: debug.vehicles as Record<string, unknown>,
+        weapon: debug.weapon as Record<string, unknown>
+      };
+    });
+    expect(Number(initial.communityModels.instanceCount)).toBeGreaterThanOrEqual(9);
+    expect(initial.communityModels.modelFormat).toBe("ldraw");
+    expect(Number(initial.vehicles.patrolCount)).toBeGreaterThanOrEqual(2);
+    expect(initial.weapon.hasGatlingGun).toBe(true);
+    expect(Number(initial.weapon.barrelCount)).toBe(6);
+
+    const beforeVehicle = await page.evaluate(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown>;
+      const instances = communityModels.instances as Array<{ modelId: string; position: number[] }>;
+      return instances.find((instance) => instance.modelId === "mini-construction")?.position;
+    });
+    await page.waitForTimeout(750);
+    const afterVehicle = await page.evaluate(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown>;
+      const instances = communityModels.instances as Array<{ modelId: string; position: number[] }>;
+      return instances.find((instance) => instance.modelId === "mini-construction")?.position;
+    });
+    expect(afterVehicle).toBeDefined();
+    expect(Math.hypot((afterVehicle?.[0] ?? 0) - (beforeVehicle?.[0] ?? 0), (afterVehicle?.[2] ?? 0) - (beforeVehicle?.[2] ?? 0))).toBeGreaterThan(0.1);
+
+    await page.evaluate(() => {
+      const debug = window.__legoGameDebug as
+        | ({ teleport?: (options: { mode: "onFoot"; playerPosition?: { x: number; y: number; z: number } }) => void })
+        | undefined;
+      debug?.teleport?.({ mode: "onFoot", playerPosition: { x: 0, y: 0, z: -30 } });
+    });
+    await page.getByTestId("game-canvas").click();
+    await page.mouse.down();
+    await page.waitForTimeout(900);
+    const firing = await page.evaluate(() => window.__legoGameDebug?.weapon as Record<string, unknown>);
+    expect(firing.projectileVisualKind).toBe("tracer-streak");
+    expect(Number(firing.tracerVisualCount)).toBeGreaterThan(0);
+    await page.mouse.up();
+
+    await page.waitForFunction(() => {
+      const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown> | undefined;
+      const statuses = communityModels?.statuses as Record<string, unknown> | undefined;
+      return Object.values(statuses ?? {}).includes("detached");
+    }, undefined, { timeout: 10000 });
+
+    await page.waitForFunction(() => {
+      const cleanup = window.__legoGameDebug?.cleanup as Record<string, unknown> | undefined;
+      return Number(cleanup?.removedDebrisCount ?? 0) > 0;
+    }, undefined, { timeout: 12000 });
+
+    const cleanup = await page.evaluate(() => window.__legoGameDebug?.cleanup as Record<string, unknown>);
+    expect(Number(cleanup.removedDebrisCount)).toBeGreaterThan(0);
   });
 });

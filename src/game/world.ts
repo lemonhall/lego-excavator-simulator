@@ -204,7 +204,7 @@ function createPlayer(): Group {
   const rightArm = createArm("playerRightArm");
   rightArm.position.set(0.5, 1.3, 0);
   fallback.add(rightArm);
-  rightArm.add(createPlayerGatlingGun());
+  root.add(createPlayerGatlingGun());
 
   const head = new Mesh(new CylinderGeometry(0.24, 0.24, 0.36, 32), plastic.yellow);
   head.name = "playerHead";
@@ -472,15 +472,25 @@ function createArm(name: string): Group {
 function createPlayerGatlingGun(): Group {
   const gun = new Group();
   gun.name = "playerGatlingGun";
-  gun.position.set(0.12, -0.62, -0.28);
-  gun.rotation.set(-0.1, 0, -0.18);
+  gun.position.set(-0.54, 1.08, -0.74);
+  gun.rotation.set(-0.02, Math.PI - 0.04, 0.08);
   gun.userData.weaponKind = "gatling";
+  gun.userData.excludeFromScaleBounds = true;
   gun.userData.assetSource = "BrickLink Studio/Rebrickable minifig-scale minigun inspiration; local brick-built fallback";
   markPart(gun, "playerWeapon");
 
-  const receiver = createRoundedPanel("playerGatlingReceiver", 0.28, 0.2, 0.36, plastic.black);
+  const receiver = createRoundedPanel("playerGatlingReceiver", 0.34, 0.24, 0.46, plastic.black);
   receiver.position.set(0, 0, -0.02);
   gun.add(receiver);
+
+  const batteryPack = createRoundedPanel("playerGatlingBatteryPack", 0.18, 0.24, 0.2, plastic.black);
+  batteryPack.position.set(-0.1, -0.02, 0.08);
+  gun.add(batteryPack);
+
+  const sideHandle = createRoundedPanel("playerGatlingSideHandle", 0.08, 0.12, 0.36, plastic.black);
+  sideHandle.position.set(0.14, -0.08, -0.18);
+  sideHandle.rotation.z = 0.28;
+  gun.add(sideHandle);
 
   const grip = createRoundedPanel("playerGatlingGrip", 0.09, 0.28, 0.11, plastic.black);
   grip.position.set(0, -0.22, 0.1);
@@ -497,32 +507,45 @@ function createPlayerGatlingGun(): Group {
   markPart(rearCap, "weaponReceiver");
   gun.add(rearCap);
 
+  const barrelCluster = new Group();
+  barrelCluster.name = "playerGatlingBarrelCluster";
+  barrelCluster.userData.barrelCount = 6;
+  markPart(barrelCluster, "weaponBarrelCluster");
+  gun.add(barrelCluster);
+
   for (let i = 0; i < 6; i += 1) {
     const angle = (Math.PI * 2 * i) / 6;
-    const barrel = new Mesh(new CylinderGeometry(0.026, 0.026, 0.62, 16), plastic.black);
+    const barrel = new Mesh(new CylinderGeometry(0.028, 0.028, 0.86, 16), plastic.black);
     barrel.name = `playerGatlingBarrel${i}`;
     barrel.rotation.x = Math.PI / 2;
-    barrel.position.set(Math.cos(angle) * 0.075, Math.sin(angle) * 0.075, -0.42);
+    barrel.position.set(Math.cos(angle) * 0.086, Math.sin(angle) * 0.086, -0.58);
     barrel.castShadow = true;
     barrel.receiveShadow = true;
     barrel.userData.materialKind = "legoPlastic";
     markPart(barrel, "weaponBarrel");
-    gun.add(barrel);
+    barrelCluster.add(barrel);
   }
 
   const barrelRing = new Mesh(new CylinderGeometry(0.13, 0.13, 0.05, 24), plastic.black);
   barrelRing.name = "playerGatlingBarrelRing";
   barrelRing.rotation.x = Math.PI / 2;
-  barrelRing.position.set(0, 0, -0.68);
+  barrelRing.position.set(0, 0, -1.02);
   barrelRing.castShadow = true;
   barrelRing.receiveShadow = true;
   barrelRing.userData.materialKind = "legoPlastic";
   markPart(barrelRing, "weaponBarrelRing");
-  gun.add(barrelRing);
+  barrelCluster.add(barrelRing);
+
+  for (let i = 0; i < 5; i += 1) {
+    const link = createRoundedPanel(`playerGatlingAmmoLink${i}`, 0.08, 0.045, 0.1, plastic.black);
+    link.position.set(-0.14 - i * 0.026, -0.18 - i * 0.018, 0.18 + i * 0.026);
+    link.rotation.z = -0.35;
+    gun.add(link);
+  }
 
   const muzzle = new Object3D();
   muzzle.name = "playerWeaponMuzzle";
-  muzzle.position.set(0, 0, -0.78);
+  muzzle.position.set(0, 0, -1.16);
   gun.add(muzzle);
 
   return gun;
