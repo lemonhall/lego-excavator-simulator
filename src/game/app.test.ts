@@ -7,11 +7,19 @@ import {
   computeCommunityArenaPopulation,
   computeCommunityModelPlacement,
   computeDefaultCommunitySpawnDelay,
+  shouldRefreshDebugState,
   computeCommunityVehiclePatrolDelta,
   computeCommunityVehicleDriveDelta,
   computeWeaponFireDirection,
   DEFAULT_COMMUNITY_TARGET_COUNT,
   isDrivableCommunityModel,
+  shouldCastCommunityModelShadow,
+  shouldCollectShooterTargets,
+  shouldResetCommunityModelParts,
+  shouldShowIntactCommunityModelEdges,
+  shouldUseCommunityRenderProxy,
+  shouldUpdateCommunityModelEdgeVisibility,
+  shouldRegisterCommunityModelPhysics,
   selectSpawnableCommunityModels
 } from "./app";
 import type { CommunityModelCatalog, CommunityModelManifestEntry } from "./communityModels";
@@ -80,6 +88,35 @@ describe("community model placement", () => {
   it("REQ-0007-003 staggers the larger default spawn wave to protect startup input", () => {
     expect(computeDefaultCommunitySpawnDelay(0)).toBeGreaterThanOrEqual(1200);
     expect(computeDefaultCommunitySpawnDelay(26) - computeDefaultCommunitySpawnDelay(0)).toBeGreaterThanOrEqual(2000);
+  });
+
+  it("REQ-0007-006 only registers community brick physics after a target detaches", () => {
+    expect(shouldRegisterCommunityModelPhysics({ status: "intact" })).toBe(false);
+    expect(shouldRegisterCommunityModelPhysics({ status: "detached" })).toBe(true);
+  });
+
+  it("REQ-0007-006 throttles expensive community debug traversal", () => {
+    expect(shouldRefreshDebugState(0, -1)).toBe(true);
+    expect(shouldRefreshDebugState(1.1, 1)).toBe(false);
+    expect(shouldRefreshDebugState(1.26, 1)).toBe(true);
+  });
+
+  it("REQ-0007-006 skips redundant intact community part and edge work", () => {
+    expect(shouldResetCommunityModelParts("intact")).toBe(false);
+    expect(shouldResetCommunityModelParts("detached")).toBe(true);
+    expect(shouldCastCommunityModelShadow()).toBe(false);
+    expect(shouldShowIntactCommunityModelEdges()).toBe(false);
+    expect(shouldUseCommunityRenderProxy("intact", false)).toBe(true);
+    expect(shouldUseCommunityRenderProxy("intact", true)).toBe(false);
+    expect(shouldUseCommunityRenderProxy("detached", false)).toBe(false);
+    expect(shouldUpdateCommunityModelEdgeVisibility(true, true)).toBe(false);
+    expect(shouldUpdateCommunityModelEdgeVisibility(true, false)).toBe(true);
+  });
+
+  it("REQ-0007-007 only collects shooter targets while firing or projectiles are active", () => {
+    expect(shouldCollectShooterTargets(false, 0)).toBe(false);
+    expect(shouldCollectShooterTargets(true, 0)).toBe(true);
+    expect(shouldCollectShooterTargets(false, 1)).toBe(true);
   });
 
   it("REQ-0007-003 only exposes radar trucks as spawnable community targets", () => {

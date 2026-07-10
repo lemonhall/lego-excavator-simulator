@@ -109,3 +109,11 @@
 - **物理风险**：Rapier remove API 可能不足。本轮至少隐藏视觉碎片并停止同步，后续版本再做物理 body 真删除。
 - **E2E 稳定性风险**：大量异步 LDraw 加载可能导致测试等待变长。E2E 使用 debug 条件等待，不使用固定截图判定。
 - **缓存陈旧风险**：车辆持续移动时世界目标可能与视觉脱节。缓存只保存本地中心/半径，每帧用最新 root matrix 变换到世界坐标；实例生命周期结束时删除缓存。
+
+## REQ-0007-007 Execution Evidence
+
+- Baseline：`npm test` 101 passed；`npm run build` exit 0。
+- TDD Red：`performance.test.ts` 因模块缺失失败；`communityRuntime.test.ts` 因模块缺失失败；稳态 traversal 探针测试由 0 != 1 失败；E2E 因 `debug.performance` 缺失失败。
+- TDD Green：性能/缓存/app 聚焦测试 24 passed；最终全量 `npm test` 110 passed；`npm run build` exit 0；desktop E2E 14 passed。
+- E2E 兼容修复：关闭 preserved buffer 后首屏像素测试转为合成器 screenshot probe，focused E2E passed。
+- 待验收：用户当前机器五秒窗口 `window.__legoGameDebug.performance.fps >= 55`。

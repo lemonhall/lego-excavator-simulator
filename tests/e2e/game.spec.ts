@@ -11,12 +11,12 @@ test.describe("lego excavator game", () => {
     await expect(page.getByTestId("camera-mode")).toContainText("第三人称过肩");
     await expect(page.getByTestId("audio-mode")).toContainText("声音：按任意控制键启用");
 
-    const nonBackgroundPixels = await page.evaluate(() => {
-      const gameCanvas = document.querySelector<HTMLCanvasElement>('[data-testid="game-canvas"]');
-      if (!gameCanvas) {
-        return 0;
-      }
-
+    const canvasScreenshot = await canvas.screenshot();
+    const screenshotDataUrl = `data:image/png;base64,${canvasScreenshot.toString("base64")}`;
+    const nonBackgroundPixels = await page.evaluate(async (dataUrl) => {
+      const image = new Image();
+      image.src = dataUrl;
+      await image.decode();
       const probe = document.createElement("canvas");
       probe.width = 96;
       probe.height = 64;
@@ -25,7 +25,7 @@ test.describe("lego excavator game", () => {
         return 0;
       }
 
-      context.drawImage(gameCanvas, 0, 0, probe.width, probe.height);
+      context.drawImage(image, 0, 0, probe.width, probe.height);
       const data = context.getImageData(0, 0, probe.width, probe.height).data;
       let count = 0;
       for (let i = 0; i < data.length; i += 4) {
@@ -39,11 +39,11 @@ test.describe("lego excavator game", () => {
         }
       }
       return count;
-    });
+    }, screenshotDataUrl);
 
     expect(nonBackgroundPixels).toBeGreaterThan(20);
     await testInfo.attach("farm-canvas", {
-      body: await page.screenshot({ fullPage: true }),
+      body: canvasScreenshot,
       contentType: "image/png"
     });
   });
@@ -462,7 +462,7 @@ test.describe("lego excavator game", () => {
     });
   });
 
-  test("REQ-0007-001 REQ-0007-002 REQ-0007-003 REQ-0007-005 REQ-0007-006 v9 shooter swarm", async ({ page }) => {
+  test("REQ-0007-001 REQ-0007-002 REQ-0007-003 REQ-0007-005 REQ-0007-006 REQ-0007-007 v9 shooter swarm", async ({ page }) => {
     await page.goto("/");
 
     await page.waitForFunction(() => {
@@ -475,7 +475,8 @@ test.describe("lego excavator game", () => {
       return {
         communityModels: debug.communityModels as Record<string, unknown>,
         vehicles: debug.vehicles as Record<string, unknown>,
-        weapon: debug.weapon as Record<string, unknown>
+        weapon: debug.weapon as Record<string, unknown>,
+        performance: debug.performance as Record<string, unknown>
       };
     });
     expect(Number(initial.communityModels.instanceCount)).toBeGreaterThanOrEqual(27);
@@ -483,6 +484,15 @@ test.describe("lego excavator game", () => {
     expect(Number(initial.vehicles.patrolCount)).toBeGreaterThanOrEqual(2);
     expect(initial.weapon.hasGatlingGun).toBe(true);
     expect(Number(initial.weapon.barrelCount)).toBe(6);
+    expect(Number(initial.performance.fps)).toBeGreaterThan(0);
+    expect(Number(initial.performance.sampleCount)).toBeGreaterThan(0);
+    expect(Number(initial.performance.targetCacheEntryCount)).toBeGreaterThanOrEqual(27);
+    expect(Number(initial.performance.communitySteadyStateTraversalCount)).toBe(0);
+    expect(Number(initial.performance.pixelRatioCap)).toBe(1.5);
+    expect(Number(initial.performance.activePixelRatio)).toBeLessThanOrEqual(1.5);
+    expect(initial.performance.preserveDrawingBuffer).toBe(false);
+    expect(Number(initial.performance.drawCalls)).toBeGreaterThan(0);
+    expect(Number(initial.performance.triangles)).toBeGreaterThan(0);
 
     const beforeVehicle = await page.evaluate(() => {
       const communityModels = window.__legoGameDebug?.communityModels as Record<string, unknown>;

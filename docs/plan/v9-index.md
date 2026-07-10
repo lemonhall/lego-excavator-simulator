@@ -53,16 +53,36 @@
 
 ## Review
 
-- pending
+### Tashan Review - v9 / M6
+
+- reviewer_context: same-model fresh-context（本轮未授权 sub-agent）
+- round: 1
+- cost_profile: standard
+- verdict: pass（自动化 Gate）；M6 等待用户机器 55+ FPS 验收
+- blocker_count: 0
+- major_count: 0
+- stuck_signatures: none
+- regression_signatures: none
+- commands_checked: `npm test`（110 passed）；`npm run build`；desktop E2E（14 passed）；`git diff --check`；乱码/NUL 扫描
+- residual_risks: 浏览器控制策略阻止 agent 直接读取本地页面性能值；必须由用户读取五秒窗口 FPS 后才能关闭 M6。
+
+### Findings
+
+| severity | signature | evidence | disposition |
+|---|---|---|---|
+| BLOCKER | e2e::canvas::preserved-buffer-dependency | 关闭 preserved buffer 后旧 `drawImage(gameCanvas)` 返回空像素 | fixed：改为 Playwright 合成器 canvas screenshot 后做 2D 像素检查 |
+| MAJOR | performance::debug::full-scene-traversal | `getDestructibleDebug` 从 `world.scene` 扫描，连带遍历 27 个 LDraw root | fixed：只扫描 `world.destructibleRoots`，并为 community root 安装稳态 traversal 探针 |
+| NOTE | tooling::doc-hygiene::req-id-format | 塔山脚本只识别 `REQ-###`，误报仓库统一的 `REQ-0007-007` | 人工 `rg` 追溯检查通过；不改变仓库 Req ID 协议 |
 
 ## 差异列表
 
-- pending
+- 未满足：用户当前机器全部 27 个目标加载后，尚需读取五秒窗口并确认 `performance.fps >= 55`。
+- 已满足：自动化证明 cache entry >= 27、community 稳态 traversal 为 0、DPR 上限 1.5、preserved buffer 关闭、renderer calls/triangles 可观测。
 
 ## Tashan Trigger Audit
 
 - expected_review_triggers: 文档完成、M2-M6 完成、v9 完成
-- actual_review_runs: 0
+- actual_review_runs: 1
 - skipped_triggers: 0
 - skip_reasons: none
 - mitigation: 每个里程碑完成前更新本文件状态、证据和 Review 记录。

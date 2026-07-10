@@ -34,7 +34,7 @@
 - Create: `src/game/performance.test.ts`
 - Modify: `src/game/app.ts:114-188,254-312,332-381`
 
-- [ ] **Step 1: Write the failing renderer and timing tests**
+- [x] **Step 1: Write the failing renderer and timing tests**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -77,13 +77,13 @@ describe("performance policy", () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: `npm test -- src/game/performance.test.ts`
 
 Expected: FAIL because `./performance` does not exist.
 
-- [ ] **Step 3: Implement the minimal pure performance module**
+- [x] **Step 3: Implement the minimal pure performance module**
 
 ```ts
 export const MAX_RENDERER_PIXEL_RATIO = 1.5;
@@ -133,17 +133,17 @@ export function getFrameTimingSnapshot(tracker: FrameTimingTracker): FrameTiming
 }
 ```
 
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [x] **Step 4: Run the focused test and verify GREEN**
 
 Run: `npm test -- src/game/performance.test.ts`
 
 Expected: 3 tests pass.
 
-- [ ] **Step 5: Wire renderer and tick policy into app**
+- [x] **Step 5: Wire renderer and tick policy into app**
 
 Use `new WebGLRenderer(RENDERER_OPTIONS)`, `renderer.setPixelRatio(selectRendererPixelRatio(window.devicePixelRatio))`, a `FrameTimingTracker`, and `tick(timestampMs: number)` that calls `recordFrameTimestamp` before game work. Initial scheduling must use `requestAnimationFrame(tick)` instead of invoking a timestamp-free simulation frame.
 
-- [ ] **Step 6: Run type and focused regression checks**
+- [x] **Step 6: Run type and focused regression checks**
 
 Run: `npm test -- src/game/performance.test.ts src/game/app.test.ts; npm run build`
 
@@ -156,7 +156,7 @@ Expected: focused tests pass; TypeScript and Vite build exit 0; the existing Rap
 - Create: `src/game/communityRuntime.test.ts`
 - Modify: `src/game/app.ts:726-793,982-1065,1199-1369,1520-1612`
 
-- [ ] **Step 1: Write failing cache tests using real Three.js objects**
+- [x] **Step 1: Write failing cache tests using real Three.js objects**
 
 ```ts
 import { BoxGeometry, Group, Mesh, MeshStandardMaterial } from "three";
@@ -212,13 +212,13 @@ it("REQ-0007-007 changes proxy mode once and spins only cached wheels", () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: `npm test -- src/game/communityRuntime.test.ts`
 
 Expected: FAIL because `./communityRuntime` does not exist.
 
-- [ ] **Step 3: Implement cache contracts**
+- [x] **Step 3: Implement cache contracts**
 
 Implement these exact public contracts in `communityRuntime.ts`:
 
@@ -255,7 +255,7 @@ export function spinCachedCommunityWheels(entry: CommunityRuntimeEntry, travelDi
 
 Cache construction may traverse once to collect visible mesh bounds and edges. `getCachedCommunityTarget`, unchanged `setCachedCommunityRenderMode`, and `spinCachedCommunityWheels` must not call `traverse` or `Box3.setFromObject`.
 
-- [ ] **Step 4: Run cache tests and verify GREEN**
+- [x] **Step 4: Run cache tests and verify GREEN**
 
 Run: `npm test -- src/game/communityRuntime.test.ts`
 
@@ -267,33 +267,33 @@ Expected: all cache tests pass and the explicit traversal counter remains unchan
 - Modify: `src/game/app.ts`
 - Modify: `src/game/app.test.ts`
 
-- [ ] **Step 1: Add failing app-level behavior tests**
+- [x] **Step 1: Add failing app-level behavior tests**
 
 Extend the existing REQ-0007-007 section to assert that renderer configuration is not preserved-buffer mode, unchanged render mode reports no work, and the public wheel wrapper retains the existing four-wheel behavior. Use pure/exported policies rather than mounting WebGL in Node.
 
-- [ ] **Step 2: Run app and runtime tests to verify RED**
+- [x] **Step 2: Run app and runtime tests to verify RED**
 
 Run: `npm test -- src/game/app.test.ts src/game/communityRuntime.test.ts src/game/performance.test.ts`
 
 Expected: new app integration assertions fail because the cache is not wired into app hot paths.
 
-- [ ] **Step 3: Register every spawned instance exactly once**
+- [x] **Step 3: Register every spawned instance exactly once**
 
 Create one `CommunityRuntimeCache` beside `communityInstances`. After `applyCommunityRenderProxy`, call `getCommunityRuntimeEntry(cache, instance)` before adding the instance to steady-state processing.
 
-- [ ] **Step 4: Replace shooter target bounds scans**
+- [x] **Step 4: Replace shooter target bounds scans**
 
 Change `collectShooterTargets` to call `getCachedCommunityTarget(cache, instance)`. Delete steady-state calls to `getVisibleCommunityModelBounds`; retain a one-time/fallback bounds helper only inside cache construction.
 
-- [ ] **Step 5: Replace proxy and edge traversal in sync**
+- [x] **Step 5: Replace proxy and edge traversal in sync**
 
 Change `syncCommunityModels` to resolve the cache entry and call `setCachedCommunityRenderMode`. Perform physics registration and physics-part synchronization only for detached instances. The unchanged proxy path must return before any part, edge, bounds, or alignment work.
 
-- [ ] **Step 6: Replace patrol wheel scans**
+- [x] **Step 6: Replace patrol wheel scans**
 
 Pass the runtime cache into patrol/drive animation and call `spinCachedCommunityWheels(getCommunityRuntimeEntry(cache, instance), distance)`. Keep `animateCommunityVehicleWheels` as a compatibility wrapper for existing tests and non-hot external callers.
 
-- [ ] **Step 7: Run focused and full unit suites**
+- [x] **Step 7: Run focused and full unit suites**
 
 Run: `npm test -- src/game/communityRuntime.test.ts src/game/performance.test.ts src/game/app.test.ts src/game/weapon.test.ts src/game/communityModels.test.ts; npm test`
 
@@ -305,7 +305,7 @@ Expected: focused tests pass, then all test files pass with no new warnings beyo
 - Modify: `src/game/app.ts:332-381`
 - Modify: `tests/e2e/game.spec.ts` in the existing `v9 shooter swarm` test
 
-- [ ] **Step 1: Add failing E2E assertions**
+- [x] **Step 1: Add failing E2E assertions**
 
 After waiting for 27 models, assert:
 
@@ -324,17 +324,17 @@ expect(Number(performanceDebug.triangles)).toBeGreaterThan(0);
 
 Do not assert 55 FPS in CI; that threshold belongs to the specified five-second user-machine acceptance sample.
 
-- [ ] **Step 2: Run the v9 E2E and verify RED**
+- [x] **Step 2: Run the v9 E2E and verify RED**
 
 Run: `npm run e2e -- tests/e2e/game.spec.ts --project=desktop-chrome --grep "v9 shooter swarm"`
 
 Expected: FAIL because `window.__legoGameDebug.performance` is absent or incomplete.
 
-- [ ] **Step 3: Add debug performance assembly without scene traversal**
+- [x] **Step 3: Add debug performance assembly without scene traversal**
 
 At the existing 0.25-second debug cadence, combine `getFrameTimingSnapshot`, `renderer.info`, renderer context attributes, active pixel ratio, and cache stats. Do not derive any metric through `scene.traverse` or `Box3.setFromObject`.
 
-- [ ] **Step 4: Run the v9 E2E and verify GREEN**
+- [x] **Step 4: Run the v9 E2E and verify GREEN**
 
 Run: `npm run e2e -- tests/e2e/game.spec.ts --project=desktop-chrome --grep "v9 shooter swarm"`
 
@@ -347,7 +347,7 @@ Expected: the existing gameplay assertions and all new performance debug asserti
 - Modify: `docs/plan/v9-index.md`
 - Modify: `docs/plan/v9-shooter-swarm-feel.md`
 
-- [ ] **Step 1: Run complete verification**
+- [x] **Step 1: Run complete verification**
 
 Run in order:
 
@@ -365,11 +365,11 @@ Expected: 0 failed unit/E2E tests, build exit 0, diff check exit 0, and no corru
 
 Open `http://127.0.0.1:5173/`, wait for `targetCacheEntryCount >= 27`, leave patrol idle for five seconds, and read `window.__legoGameDebug.performance`. Acceptance requires FPS >= 55, cache entries >= 27, and steady-state traversal count 0.
 
-- [ ] **Step 3: Run a fresh-context standard Tashan Review**
+- [x] **Step 3: Run a fresh-context standard Tashan Review**
 
 Review the approved design, ECN-0008, REQ-0007-007, current diff, test output, E2E output, and performance sample. Record BLOCKER/MAJOR/MINOR/NOTE findings with stable signatures. Fix all BLOCKER findings and either fix or explicitly disposition MAJOR findings, with at most three rounds.
 
-- [ ] **Step 4: Update traceability and completion evidence**
+- [x] **Step 4: Update traceability and completion evidence**
 
 Mark ECN test synchronization complete. Update M6 and M7 evidence/status, REQ-0007-007 evidence/status, Review record, difference list, and Tashan Trigger Audit. Do not mark v9 fully done if any earlier v9 milestone remains incomplete.
 

@@ -1,8 +1,11 @@
 import {
   ACESFilmicToneMapping,
   Box3,
+  BufferGeometry,
   Group,
   CylinderGeometry,
+  Material,
+  Matrix4,
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
@@ -15,15 +18,22 @@ import {
   Vector3,
   WebGLRenderer
 } from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { deriveSoundState, GameAudioController } from "./audio";
 import { computeCameraRig } from "./camera";
 import { createDebrisCleanupTracker, updateDebrisCleanup, type DebrisCleanupTracker } from "./cleanup";
 import {
+  createCommunityRuntimeCache,
+  getCachedCommunityTarget,
+  getCommunityRuntimeEntry,
+  setCachedCommunityRenderMode,
+  spinCachedCommunityWheels,
+  type CommunityRuntimeCache
+} from "./communityRuntime";
+import {
   collectCommunityModelParts,
   loadCommunityModelCatalog,
   loadLDrawCommunityModel,
-  resetCommunityPartToBase,
-  setCommunityModelEdgeVisibility,
   validateCommunityModelCatalog,
   type CommunityModelCatalog,
   type CommunityModelInstance,
@@ -32,6 +42,15 @@ import {
 } from "./communityModels";
 import { KeyboardInput } from "./input";
 import { loadOfficialWorkerModel } from "./officialWorkerModel";
+import {
+  MAX_RENDERER_PIXEL_RATIO,
+  RENDERER_OPTIONS,
+  createFrameTimingTracker,
+  getFrameTimingSnapshot,
+  recordFrameTimestamp,
+  selectRendererPixelRatio,
+  type FrameTimingTracker
+} from "./performance";
 import { createPhysicsWorldController, type PhysicsBodyHandle, type PhysicsWorldController } from "./physics";
 import { createInitialGameState, updateGameState, type DestructibleState, type GameState } from "./state";
 import { createWeaponSystem, type ProjectileHit, type ShooterTarget, type WeaponSystem } from "./weapon";
@@ -58,6 +77,7 @@ declare global {
       vehicles?: Record<string, unknown>;
       controls?: Record<string, unknown>;
       weapon?: Record<string, unknown>;
+      performance?: Record<string, unknown>;
       worldBounds?: Record<string, unknown>;
       teleport?: (options: DebugTeleportOptions) => void;
     };
@@ -88,13 +108,14 @@ const communityImpulseStatuses = new WeakMap<Object3D, CommunityModelInstance["s
 const COMMUNITY_VEHICLE_SPEED = 4.2;
 const COMMUNITY_VEHICLE_PATROL_SPEED = 1.35;
 const COMMUNITY_VEHICLE_INTERACTION_DISTANCE = 2.4;
-const COMMUNITY_WHEEL_SPIN_PER_METER = 7.5;
 const DEFAULT_COMMUNITY_TARGET_HEALTH = 4;
 const FARM_TARGET_HEALTH = 3;
 const DEBRIS_TTL_SECONDS = 3;
 export const DEFAULT_COMMUNITY_TARGET_COUNT = 27;
 const DEFAULT_COMMUNITY_SPAWN_START_DELAY_MS = 1200;
 const DEFAULT_COMMUNITY_SPAWN_STEP_DELAY_MS = 85;
+const DEBUG_SYNC_INTERVAL_SECONDS = 0.25;
+const COMMUNITY_PROXY_GROUND_CLEARANCE = 0.015;
 
 interface CommunityVehicleDriveState {
   instanceId: string;
@@ -123,8 +144,8 @@ export function mountGameApp(root: HTMLElement): GameApp {
   modelPanel.hidden = true;
   wrapper.appendChild(modelPanel);
 
-  const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const renderer = new WebGLRenderer(RENDERER_OPTIONS);
+  renderer.setPixelRatio(selectRendererPixelRatio(window.devicePixelRatio));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
@@ -173,12 +194,15 @@ export function mountGameApp(root: HTMLElement): GameApp {
   let modelBrowserOpen = false;
   let communityCatalog: CommunityModelCatalog | undefined;
   const communityInstances: CommunityModelInstance[] = [];
+  const communityRuntimeCache = createCommunityRuntimeCache();
+  const frameTiming = createFrameTimingTracker();
   const autoSpawnedCommunityModelIds = new Set<string>();
   let communityVehicleDrive: CommunityVehicleDriveState | undefined;
   let nextCommunityInstanceId = 0;
   let modelPanelMessage = "正在加载 LDraw 模型库...";
   let elapsedSeconds = 0;
   let vehiclePatrolDebug = { patrolCount: 0, movedCount: 0 };
+  let lastDebugSyncSeconds = -1;
   const pendingCommunitySpawnTimers: number[] = [];
 
   const onResize = () => {
@@ -230,6 +254,9 @@ export function mountGameApp(root: HTMLElement): GameApp {
       .then((instance) => {
         positionCommunityInstance(instance.root, communityInstances.length);
         applyCommunityColorVariant(instance.root, communityInstances.length);
+        applyCommunityPerformanceTreatment(instance.root);
+        applyCommunityRenderProxy(instance.root);
+        getCommunityRuntimeEntry(communityRuntimeCache, instance);
         world.scene.add(instance.root);
         communityInstances.push(instance);
         registerCommunityModelPhysics(instance, physics);
@@ -243,11 +270,12 @@ export function mountGameApp(root: HTMLElement): GameApp {
       });
   };
 
-  const tick = () => {
+  const tick = (timestampMs: number) => {
     if (disposed) {
       return;
     }
 
+    recordFrameTimestamp(frameTiming, timestampMs);
     previousState = state;
     elapsedSeconds += FIXED_DT;
     const inputState = input.snapshot();
@@ -265,34 +293,70 @@ export function mountGameApp(root: HTMLElement): GameApp {
       state.player.position = communityDriveResult.playerPosition;
     }
     state.player.visible = communityVehicleDrive === undefined && state.mode === "onFoot";
-    vehiclePatrolDebug = updateCommunityVehiclePatrol(communityInstances, communityVehicleDrive, elapsedSeconds, FIXED_DT);
+    vehiclePatrolDebug = updateCommunityVehiclePatrol(
+      communityInstances,
+      communityVehicleDrive,
+      elapsedSeconds,
+      FIXED_DT,
+      communityRuntimeCache
+    );
     audio.update(deriveSoundState(previousState, state));
-    syncWorld(world, state, physics, communityInstances);
+    syncWorld(world, state, physics, communityInstances, communityRuntimeCache);
     if (communityVehicleDrive) {
       world.playerRoot.visible = false;
     }
-    updateWeaponSystem(world, camera, weapon, projectileRoot, muzzleFlash, inputState.fire && state.mode === "onFoot", communityInstances, state);
-    syncCommunityModels(communityInstances, state, physics);
+    updateWeaponSystem(
+      world,
+      camera,
+      weapon,
+      projectileRoot,
+      muzzleFlash,
+      inputState.fire && state.mode === "onFoot",
+      communityInstances,
+      state,
+      communityRuntimeCache
+    );
+    syncCommunityModels(communityInstances, state, physics, communityRuntimeCache, communityVehicleDrive?.instanceId);
     updateDebrisCleanup(debrisCleanup, collectDebrisCleanupTargets(state, communityInstances), FIXED_DT);
     applyDebrisCleanupVisibility(world, communityInstances, debrisCleanup);
     if (communityVehicleDrive) {
       const drivenInstance = communityInstances.find((instance) => instance.id === communityVehicleDrive?.instanceId);
       if (drivenInstance) {
-        animateCommunityVehicleWheels(drivenInstance, communityDriveResult.travelDistance);
+        spinCachedCommunityWheels(
+          getCommunityRuntimeEntry(communityRuntimeCache, drivenInstance),
+          communityDriveResult.travelDistance
+        );
       }
     }
-    syncDebugState(world, state, audio, physics, communityInstances, communityVehicleDrive, weapon, debrisCleanup, vehiclePatrolDebug, (options) => {
-      if (options.mode) {
-        state.mode = options.mode;
-        state.player.visible = options.mode === "onFoot";
-      }
-      if (options.playerPosition) {
-        state.player.position = { ...options.playerPosition };
-      }
-      if (options.excavatorPosition) {
-        state.excavator.position = { ...options.excavatorPosition };
-      }
-    });
+    if (shouldRefreshDebugState(elapsedSeconds, lastDebugSyncSeconds)) {
+      syncDebugState(
+        world,
+        state,
+        audio,
+        physics,
+        communityInstances,
+        communityVehicleDrive,
+        weapon,
+        debrisCleanup,
+        vehiclePatrolDebug,
+        renderer,
+        communityRuntimeCache,
+        frameTiming,
+        (options) => {
+          if (options.mode) {
+            state.mode = options.mode;
+            state.player.visible = options.mode === "onFoot";
+          }
+          if (options.playerPosition) {
+            state.player.position = { ...options.playerPosition };
+          }
+          if (options.excavatorPosition) {
+            state.excavator.position = { ...options.excavatorPosition };
+          }
+        }
+      );
+      lastDebugSyncSeconds = elapsedSeconds;
+    }
     updateCamera(camera, state);
     syncCameraFillLight(world, camera, state);
     updateHud(hud, state, audio, communityVehicleDrive);
@@ -300,7 +364,7 @@ export function mountGameApp(root: HTMLElement): GameApp {
     animationFrame = window.requestAnimationFrame(tick);
   };
 
-  tick();
+  animationFrame = window.requestAnimationFrame(tick);
 
   return {
     destroy: () => {
@@ -329,6 +393,9 @@ function syncDebugState(
   weapon: WeaponSystem,
   debrisCleanup: DebrisCleanupTracker,
   vehiclePatrolDebug: Record<string, unknown>,
+  renderer: WebGLRenderer,
+  communityRuntimeCache: CommunityRuntimeCache,
+  frameTiming: FrameTimingTracker,
   teleport: (options: DebugTeleportOptions) => void
 ): void {
   window.__legoGameDebug = {
@@ -337,10 +404,15 @@ function syncDebugState(
     fallbackVisible: world.playerRoot.getObjectByName("playerProceduralFallback")?.visible,
     excavator: getExcavatorDebug(world, state),
     destructibles: getDestructibleDebug(world, state),
-    communityModels: getCommunityModelsDebug(communityInstances, communityVehicleDrive?.instanceId),
+    communityModels: getCommunityModelsDebug(
+      communityInstances,
+      communityRuntimeCache,
+      communityVehicleDrive?.instanceId
+    ),
     cleanup: { ...debrisCleanup.getDebugState() },
     vehicles: vehiclePatrolDebug,
     weapon: getWeaponAppDebug(world, weapon),
+    performance: getPerformanceDebug(renderer, frameTiming, communityRuntimeCache),
     worldBounds: {
       width: 360,
       depth: 360
@@ -519,7 +591,8 @@ function syncWorld(
   world: FarmWorld,
   state: GameState,
   physics: PhysicsWorldController | undefined,
-  communityInstances: CommunityModelInstance[]
+  communityInstances: CommunityModelInstance[],
+  communityRuntimeCache: CommunityRuntimeCache
 ): void {
   world.playerRoot.visible = state.player.visible;
   world.playerRoot.position.set(state.player.position.x, state.player.position.y, state.player.position.z);
@@ -536,7 +609,7 @@ function syncWorld(
   syncExcavatorOpacity(world, state);
   syncPhysics(world, state, physics);
   syncDestructibles(world, state, physics);
-  updateCommunityModelImpactState(communityInstances, state);
+  updateCommunityModelImpactState(communityInstances, state, communityRuntimeCache);
   physics?.step(FIXED_DT);
 }
 
@@ -720,12 +793,16 @@ function updateWeaponSystem(
   muzzleFlash: PointLight,
   firing: boolean,
   communityInstances: CommunityModelInstance[],
-  state: GameState
+  state: GameState,
+  communityRuntimeCache: CommunityRuntimeCache
 ): void {
   const muzzle = world.playerRoot.getObjectByName("playerWeaponMuzzle");
   const origin = muzzle ? muzzle.getWorldPosition(new Vector3()) : world.playerRoot.position.clone().add(new Vector3(0, 1.2, -0.4));
   const cameraDirection = camera.getWorldDirection(new Vector3()).normalize();
-  const targets = collectShooterTargets(state, communityInstances);
+  const activeProjectileCount = weapon.getDebugState().activeProjectileCount;
+  const targets = shouldCollectShooterTargets(firing, activeProjectileCount)
+    ? collectShooterTargets(state, communityInstances, communityRuntimeCache)
+    : [];
   const direction = computeWeaponFireDirection(cameraDirection);
   const result = weapon.update({
     dt: FIXED_DT,
@@ -747,7 +824,15 @@ export function computeWeaponFireDirection(cameraDirection: Vector3): Vector3 {
   return cameraDirection.lengthSq() > 0 ? cameraDirection.clone().normalize() : new Vector3(0, 0, -1);
 }
 
-function collectShooterTargets(state: GameState, communityInstances: CommunityModelInstance[]): ShooterTarget[] {
+export function shouldCollectShooterTargets(firing: boolean, activeProjectileCount: number): boolean {
+  return firing || activeProjectileCount > 0;
+}
+
+function collectShooterTargets(
+  state: GameState,
+  communityInstances: CommunityModelInstance[],
+  communityRuntimeCache: CommunityRuntimeCache
+): ShooterTarget[] {
   const targets: ShooterTarget[] = [];
   for (const target of state.destructibles) {
     if (target.status === "detached") {
@@ -765,16 +850,11 @@ function collectShooterTargets(state: GameState, communityInstances: CommunityMo
     if (instance.status === "detached") {
       continue;
     }
-    const bounds = new Box3().setFromObject(instance.root);
-    if (bounds.isEmpty()) {
-      continue;
-    }
-    const center = bounds.getCenter(new Vector3());
-    const size = bounds.getSize(new Vector3());
+    const target = getCachedCommunityTarget(communityRuntimeCache, instance);
     targets.push({
       id: `community:${instance.id}`,
-      center,
-      radius: Math.max(0.85, Math.min(3.6, Math.max(size.x, size.y, size.z) * 0.55)),
+      center: target.center,
+      radius: target.radius,
       health: getCommunityTargetHealth(instance)
     });
   }
@@ -971,6 +1051,102 @@ export function applyCommunityColorVariant(root: Object3D, variantIndex: number)
   });
 }
 
+function applyCommunityPerformanceTreatment(root: Object3D): void {
+  root.traverse((object) => {
+    if (object instanceof Mesh && object.userData.communityModelPart === true) {
+      object.castShadow = shouldCastCommunityModelShadow();
+      object.receiveShadow = true;
+    }
+  });
+}
+
+export function shouldCastCommunityModelShadow(): boolean {
+  return false;
+}
+
+function applyCommunityRenderProxy(root: Object3D): void {
+  const proxy = createCommunityRenderProxy(root);
+  if (!proxy) {
+    return;
+  }
+  proxy.name = "communityRenderProxy";
+  proxy.userData.communityRenderProxy = true;
+  proxy.visible = true;
+  root.add(proxy);
+  root.traverse((object) => {
+    if (object.userData.communityModelPart === true) {
+      object.visible = false;
+    }
+    if (object.userData.communityModelEdge === true) {
+      object.visible = false;
+    }
+  });
+  root.userData.communityRenderProxyActive = true;
+  root.userData.communityModelEdgesVisible = false;
+  alignCommunityRenderProxyToGround(root, proxy);
+}
+
+function createCommunityRenderProxy(root: Object3D): Group | undefined {
+  root.updateMatrixWorld(true);
+  const rootInverse = root.matrixWorld.clone().invert();
+  const groups = new Map<string, { material: Material; geometries: BufferGeometry[] }>();
+  root.traverse((object) => {
+    if (!(object instanceof Mesh) || object.userData.communityModelPart !== true || Array.isArray(object.material)) {
+      return;
+    }
+    const sourceMaterial = object.material;
+    const geometry = object.geometry.clone();
+    const localMatrix = new Matrix4().multiplyMatrices(rootInverse, object.matrixWorld);
+    geometry.applyMatrix4(localMatrix);
+    const key = getCommunityProxyMaterialKey(sourceMaterial);
+    let group = groups.get(key);
+    if (!group) {
+      group = { material: sourceMaterial.clone(), geometries: [] };
+      groups.set(key, group);
+    }
+    group.geometries.push(geometry);
+  });
+
+  if (groups.size === 0) {
+    return undefined;
+  }
+
+  const proxy = new Group();
+  proxy.visible = false;
+  for (const group of groups.values()) {
+    const merged = mergeGeometries(group.geometries, false);
+    group.geometries.forEach((geometry) => geometry.dispose());
+    if (!merged) {
+      continue;
+    }
+    const mesh = new Mesh(merged, group.material);
+    mesh.userData.communityModelProxyPart = true;
+    mesh.castShadow = shouldCastCommunityModelShadow();
+    mesh.receiveShadow = true;
+    proxy.add(mesh);
+  }
+
+  return proxy.children.length > 0 ? proxy : undefined;
+}
+
+function getCommunityProxyMaterialKey(material: Material): string {
+  const candidate = material as Material & {
+    color?: { getHexString: () => string };
+    roughness?: number;
+    metalness?: number;
+    transparent?: boolean;
+    opacity?: number;
+  };
+  return [
+    material.type,
+    candidate.color?.getHexString() ?? "none",
+    candidate.roughness ?? "none",
+    candidate.metalness ?? "none",
+    candidate.transparent === true ? "transparent" : "opaque",
+    candidate.opacity ?? 1
+  ].join(":");
+}
+
 function positionCommunityInstance(root: Group, index: number): void {
   const placement = computeCommunityModelPlacement(index);
   root.position.set(placement.x, 0, placement.z);
@@ -1095,7 +1271,8 @@ function updateCommunityVehiclePatrol(
   instances: CommunityModelInstance[],
   drive: CommunityVehicleDriveState | undefined,
   elapsedSeconds: number,
-  dt: number
+  dt: number,
+  communityRuntimeCache: CommunityRuntimeCache
 ): { patrolCount: number; movedCount: number } {
   let patrolCount = 0;
   let movedCount = 0;
@@ -1112,7 +1289,7 @@ function updateCommunityVehiclePatrol(
     instance.root.position.x += delta.x;
     instance.root.position.z += delta.z;
     instance.root.rotation.y = delta.heading;
-    animateCommunityVehicleWheels(instance, delta.travelDistance);
+    spinCachedCommunityWheels(getCommunityRuntimeEntry(communityRuntimeCache, instance), delta.travelDistance);
     if (delta.travelDistance > 0) {
       movedCount += 1;
     }
@@ -1143,20 +1320,10 @@ export function animateCommunityVehicleWheels(
   instance: Pick<CommunityModelInstance, "parts"> | { parts: Object3D[] },
   travelDistance: number
 ): void {
-  const spin = travelDistance * COMMUNITY_WHEEL_SPIN_PER_METER;
-  instance.parts.forEach((part) => {
-    if (part.userData.communityModelWheel === true) {
-      const axis = getCommunityWheelAxis(part);
-      const baseRotationKey = `communityWheelBaseRotation${axis.toUpperCase()}`;
-      const currentBaseRotation = part.userData[baseRotationKey];
-      const baseRotation = typeof currentBaseRotation === "number" ? currentBaseRotation : part.rotation[axis];
-      part.userData[baseRotationKey] = baseRotation;
-      const previousSpin = typeof part.userData.communityWheelSpin === "number" ? part.userData.communityWheelSpin : 0;
-      const nextSpin = previousSpin - spin;
-      part.userData.communityWheelSpin = nextSpin;
-      part.rotation[axis] = baseRotation + nextSpin;
-    }
-  });
+  spinCachedCommunityWheels(
+    { wheels: instance.parts.filter((part) => part.userData.communityModelWheel === true) },
+    travelDistance
+  );
 }
 
 function getCommunityWheelAxis(part: Object3D): CommunityWheelAxis {
@@ -1164,7 +1331,11 @@ function getCommunityWheelAxis(part: Object3D): CommunityWheelAxis {
   return axis === "x" || axis === "y" || axis === "z" ? axis : "x";
 }
 
-function updateCommunityModelImpactState(communityInstances: CommunityModelInstance[], state: GameState): void {
+function updateCommunityModelImpactState(
+  communityInstances: CommunityModelInstance[],
+  state: GameState,
+  communityRuntimeCache: CommunityRuntimeCache
+): void {
   if (state.mode !== "driving") {
     return;
   }
@@ -1173,7 +1344,7 @@ function updateCommunityModelImpactState(communityInstances: CommunityModelInsta
     if (instance.status === "detached") {
       return;
     }
-    const hitRadius = getCommunityModelHitRadius(instance.root);
+    const hitRadius = Math.min(2.4, getCommunityRuntimeEntry(communityRuntimeCache, instance).targetRadius);
     const distance = Math.hypot(
       state.excavator.position.x - instance.root.position.x,
       state.excavator.position.z - instance.root.position.z
@@ -1188,16 +1359,23 @@ function updateCommunityModelImpactState(communityInstances: CommunityModelInsta
 function syncCommunityModels(
   communityInstances: CommunityModelInstance[],
   state: GameState,
-  physics: PhysicsWorldController | undefined
+  physics: PhysicsWorldController | undefined,
+  communityRuntimeCache: CommunityRuntimeCache,
+  activeVehicleInstanceId?: string
 ): void {
   communityInstances.forEach((instance) => {
+    const runtime = getCommunityRuntimeEntry(communityRuntimeCache, instance);
     if (instance.status === "intact") {
-      setCommunityModelEdgeVisibility(instance.root, true);
-      instance.parts.forEach(resetCommunityPartToBase);
+      setCachedCommunityRenderMode(
+        runtime,
+        instance,
+        shouldUseCommunityRenderProxy(instance.status, activeVehicleInstanceId === instance.id)
+      );
       return;
     }
 
-    setCommunityModelEdgeVisibility(instance.root, false);
+    setCachedCommunityRenderMode(runtime, instance, false);
+    registerCommunityModelPhysics(instance, physics);
     instance.parts.forEach((part) => {
       if (physics && communityPhysicsBodies.has(part)) {
         syncCommunityPhysicsPart(part, instance, state, physics);
@@ -1207,6 +1385,32 @@ function syncCommunityModels(
       applyDetachedCommunityFallbackPose(part);
     });
   });
+}
+
+export function shouldUpdateCommunityModelEdgeVisibility(current: unknown, next: boolean): boolean {
+  return current !== next;
+}
+
+export function shouldResetCommunityModelParts(status: CommunityModelInstance["status"]): boolean {
+  return status !== "intact";
+}
+
+export function shouldShowIntactCommunityModelEdges(): boolean {
+  return false;
+}
+
+export function shouldUseCommunityRenderProxy(status: CommunityModelInstance["status"], isActiveVehicle: boolean): boolean {
+  return status === "intact" && !isActiveVehicle;
+}
+
+function alignCommunityRenderProxyToGround(root: Object3D, proxy: Object3D): void {
+  const bounds = getVisibleCommunityModelBounds(root);
+  if (bounds.isEmpty() || Math.abs(bounds.min.y - COMMUNITY_PROXY_GROUND_CLEARANCE) < 0.001) {
+    return;
+  }
+  const scale = root.getWorldScale(new Vector3());
+  proxy.position.y += (COMMUNITY_PROXY_GROUND_CLEARANCE - bounds.min.y) / Math.max(0.0001, scale.y);
+  proxy.updateMatrixWorld(true);
 }
 
 function collectDebrisCleanupTargets(
@@ -1321,7 +1525,7 @@ function registerCommunityModelPhysics(
   instance: CommunityModelInstance,
   physics: PhysicsWorldController | undefined
 ): void {
-  if (!physics) {
+  if (!physics || !shouldRegisterCommunityModelPhysics(instance)) {
     return;
   }
 
@@ -1358,8 +1562,17 @@ function registerCommunityModelPhysics(
   });
 }
 
+export function shouldRegisterCommunityModelPhysics(instance: Pick<CommunityModelInstance, "status">): boolean {
+  return instance.status === "detached";
+}
+
+export function shouldRefreshDebugState(elapsedSeconds: number, lastDebugSyncSeconds: number): boolean {
+  return lastDebugSyncSeconds < 0 || elapsedSeconds - lastDebugSyncSeconds >= DEBUG_SYNC_INTERVAL_SECONDS;
+}
+
 function getCommunityModelsDebug(
   communityInstances: CommunityModelInstance[],
+  communityRuntimeCache: CommunityRuntimeCache,
   activeVehicleInstanceId?: string
 ): Record<string, unknown> {
   let visiblePartCount = 0;
@@ -1368,36 +1581,36 @@ function getCommunityModelsDebug(
   let wheelRotationSample: number | undefined;
   const instances: Record<string, unknown>[] = [];
   communityInstances.forEach((instance) => {
-    let instanceWheelCount = 0;
+    const runtime = getCommunityRuntimeEntry(communityRuntimeCache, instance);
+    const target = getCachedCommunityTarget(communityRuntimeCache, instance);
     const wheelAxes = new Set<string>();
-    instance.root.traverse((object) => {
-      if (object.visible && object.userData.communityModelPart === true) {
-        visiblePartCount += 1;
-      }
-      if (object.visible && object.userData.communityModelEdge === true) {
-        visibleEdgeCount += 1;
-      }
-      if (object.userData.communityModelWheel === true) {
-        wheelCount += 1;
-        instanceWheelCount += 1;
-        wheelAxes.add(getCommunityWheelAxis(object));
-        if (!activeVehicleInstanceId || instance.id === activeVehicleInstanceId) {
-          const axis = getCommunityWheelAxis(object);
-          wheelRotationSample ??= object.rotation[axis];
-        }
+    const visibleParts = runtime.useProxy
+      ? runtime.proxyParts.filter((part) => part.visible && runtime.proxy?.visible === true)
+      : runtime.parts.filter((part) => part.visible);
+    visiblePartCount += visibleParts.length;
+    visibleEdgeCount += runtime.edges.filter((edge) => edge.visible).length;
+    wheelCount += runtime.wheels.length;
+    runtime.wheels.forEach((wheel) => {
+      const axis = getCommunityWheelAxis(wheel);
+      wheelAxes.add(axis);
+      if (!activeVehicleInstanceId || instance.id === activeVehicleInstanceId) {
+        wheelRotationSample ??= wheel.rotation[axis];
       }
     });
-    const bounds = new Box3().setFromObject(instance.root);
+    const boundsMinY = instance.root.localToWorld(new Vector3(0, runtime.localBoundsMinY, 0)).y;
+    const boundsMaxY = instance.root.localToWorld(new Vector3(0, runtime.localBoundsMaxY, 0)).y;
     instances.push({
       id: instance.id,
       modelId: instance.modelId,
       colorVariantIndex: instance.root.userData.colorVariantIndex,
+      renderProxyActive: runtime.useProxy,
+      renderProxyY: runtime.proxy?.position.y,
       status: instance.status,
       health: getCommunityTargetHealth(instance),
       position: instance.root.position.toArray(),
-      boundsMin: bounds.min.toArray(),
-      boundsMax: bounds.max.toArray(),
-      wheelCount: instanceWheelCount,
+      boundsMin: [target.center.x - target.radius, boundsMinY, target.center.z - target.radius],
+      boundsMax: [target.center.x + target.radius, boundsMaxY, target.center.z + target.radius],
+      wheelCount: runtime.wheels.length,
       wheelAxes: [...wheelAxes]
     });
   });
@@ -1415,14 +1628,52 @@ function getCommunityModelsDebug(
   };
 }
 
-function getCommunityModelHitRadius(root: Group): number {
-  const size = new Vector3();
-  const bounds = new Box3().setFromObject(root);
-  if (bounds.isEmpty()) {
-    return 1.2;
+function getPerformanceDebug(
+  renderer: WebGLRenderer,
+  frameTiming: FrameTimingTracker,
+  communityRuntimeCache: CommunityRuntimeCache
+): Record<string, unknown> {
+  const timing = getFrameTimingSnapshot(frameTiming);
+  const contextAttributes = renderer.getContext().getContextAttributes();
+  return {
+    ...timing,
+    drawCalls: renderer.info.render.calls,
+    triangles: renderer.info.render.triangles,
+    lines: renderer.info.render.lines,
+    geometries: renderer.info.memory.geometries,
+    textures: renderer.info.memory.textures,
+    targetCacheEntryCount: communityRuntimeCache.stats.entryCount,
+    targetCacheHitCount: communityRuntimeCache.stats.hitCount,
+    targetCacheRebuildCount: communityRuntimeCache.stats.rebuildCount,
+    communityBuildTraversalCount: communityRuntimeCache.stats.buildTraversalCount,
+    communitySteadyStateTraversalCount: communityRuntimeCache.stats.steadyStateTraversalCount,
+    pixelRatioCap: MAX_RENDERER_PIXEL_RATIO,
+    activePixelRatio: renderer.getPixelRatio(),
+    preserveDrawingBuffer: contextAttributes?.preserveDrawingBuffer ?? RENDERER_OPTIONS.preserveDrawingBuffer
+  };
+}
+
+function getVisibleCommunityModelBounds(root: Object3D): Box3 {
+  const bounds = new Box3();
+  root.updateMatrixWorld(true);
+  root.traverse((object) => {
+    if (!(object instanceof Mesh) || !isObjectVisibleInHierarchy(object)) {
+      return;
+    }
+    bounds.expandByObject(object);
+  });
+  return bounds.isEmpty() ? new Box3().setFromObject(root) : bounds;
+}
+
+function isObjectVisibleInHierarchy(object: Object3D): boolean {
+  let cursor: Object3D | null = object;
+  while (cursor) {
+    if (!cursor.visible) {
+      return false;
+    }
+    cursor = cursor.parent;
   }
-  bounds.getSize(size);
-  return Math.max(0.8, Math.min(2.4, Math.max(size.x, size.z) / 2));
+  return true;
 }
 
 function getCommunityPartHalfExtents(object: Object3D): { x: number; y: number; z: number } {
@@ -1567,19 +1818,21 @@ function getDestructibleDebug(world: FarmWorld, state: GameState): Record<string
   let visiblePhysicsPartCount = 0;
   const visiblePartPositions: Record<string, number[]> = {};
   const trackedPartNames = new Set(["treeTrunk0", "treeLeaves0", "barnBase"]);
-  world.scene.traverse((object) => {
-    if (object.userData.destructibleShard === true) {
-      shardCount += 1;
-      if (object.visible) {
-        visibleShardCount += 1;
+  world.destructibleRoots.forEach((root) => {
+    root.traverse((object) => {
+      if (object.userData.destructibleShard === true) {
+        shardCount += 1;
+        if (object.visible) {
+          visibleShardCount += 1;
+        }
       }
-    }
-    if (object.visible && object.userData.destructiblePhysicsPart === true) {
-      visiblePhysicsPartCount += 1;
-    }
-    if (trackedPartNames.has(object.name)) {
-      visiblePartPositions[object.name] = object.position.toArray();
-    }
+      if (object.visible && object.userData.destructiblePhysicsPart === true) {
+        visiblePhysicsPartCount += 1;
+      }
+      if (trackedPartNames.has(object.name)) {
+        visiblePartPositions[object.name] = object.position.toArray();
+      }
+    });
   });
 
   return {
