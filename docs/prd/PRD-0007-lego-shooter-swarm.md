@@ -23,7 +23,7 @@
 ### REQ-0007-003: 默认稳定目标场
 
 - **动机**：360x360 空场只有三个模型过于单调，但过多重型 LDraw 实例会造成卡顿。
-- **范围**：启动后分批自动生成不少于 27 个可射击目标实例；当前只复用现有真实 LDraw catalog 中的 `radar-truck`，通过确定性的颜色变体增加多样性，辅以已有 farm destructibles；实例彼此拉开距离，形成前进路线。
+- **范围**：启动后分批自动生成不少于 27 个可射击目标实例；当前只复用现有真实 LDraw catalog 中的 `radar-truck`，通过确定性的颜色变体增加多样性，辅以已有 farm destructibles；完整且未驾驶的小车使用由同一 LDraw 几何合并出的渲染代理，驾驶或击毁时切回真实砖块；实例彼此拉开距离，形成前进路线。
 - **非目标**：不做在线社区搜索下载、不做场景保存、不伪造未下载社区模型。
 - **验收口径**：E2E debug `communityModels.instanceCount >= 27`，`communityModels.modelFormat === "ldraw"`，实例 `modelId` 全部为 `radar-truck`，`colorVariantIndex` 至少出现两个值，实例间最小距离不小于 28。
 
@@ -44,9 +44,16 @@
 ### REQ-0007-006: 碎片 TTL 回收
 
 - **动机**：高射速和大量目标会产生大量碎块，必须有性能上限。
-- **范围**：被击毁后的 community/farm/enemy 碎片保留 3 秒，然后隐藏或移除视觉并停止同步；debug 暴露 active/removed debris 计数；projectile 和 tracer 继续使用短 TTL/上限。
+- **范围**：被击毁后的 community/farm/enemy 碎片保留 3 秒，然后隐藏或移除视觉并停止同步；完整 community 目标不预注册砖块刚体，只有 detached 后才注册物理碎块；debug 暴露 active/removed debris 计数；projectile 和 tracer 继续使用短 TTL/上限。
 - **非目标**：不要求本轮彻底释放 Rapier 内部所有刚体；若物理引擎不支持安全 remove，本轮至少隐藏对象、停止视觉同步并记录限制。
 - **验收口径**：unit/E2E 验证目标 detached 后一段时间内 visible debris 存在，超过 TTL 后 `cleanup.removedDebrisCount > 0` 且 active debris 不持续增长。
+
+### REQ-0007-007: 27 目标稳态性能预算 [由 ECN-0008 新增]
+
+- **动机**：27 个真实 LDraw 目标全部加载后仍出现低帧率，只有数量验收而没有稳态预算不能证明目标场可玩。
+- **范围**：为完整 community 实例缓存射击包围信息、代理状态和轮子列表，稳态帧只更新根 transform 和缓存数据；renderer DPR 上限降为 1.5 并关闭 `preserveDrawingBuffer`；debug 暴露真实 rAF 帧率、帧耗时、draw calls、三角形数、缓存命中/重建和稳态模型树遍历计数。
+- **非目标**：不减少 27 个目标、不替换真实 LDraw 资产、不取消巡逻/驾驶/破坏、不在本轮改用 `InstancedMesh` 或通用动态分辨率控制器。
+- **验收口径**：unit test 证明目标移动和旋转使用缓存本地包围信息且不触发新遍历；E2E debug 在 27 个目标加载后显示 `communitySteadyStateTraversalCount === 0`、`targetCacheEntryCount >= 27`、DPR 上限为 1.5、`preserveDrawingBuffer === false`；用户当前机器五秒稳态窗口达到 55 FPS 或更高。
 
 ## Source Notes
 
